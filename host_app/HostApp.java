@@ -210,4 +210,66 @@ public class HostApp {
         }
         return buf.toString();
     }
+
+    public static void DHTest() throws Exception {
+            final CardManager cardManager = new CardManager(true, APPLET_AID_BYTE);
+            final RunConfig runCfg = RunConfig.getDefaultConfig();
+            final byte[] pin = {'1', '2', '3', '4'};
+            runCfg.setInstallData(pin);
+            runCfg.setAppletToSimulate(SecureChannelApplet.class);
+            runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL);
+
+            System.out.print("Connecting to card...");
+            if (!cardManager.Connect(runCfg)) {
+                System.out.println(" Failed.");
+            }
+            System.out.println(" Done.");
+
+            final byte[] pin2 = {'1', '2', '3', '4'};
+            final ResponseAPDU responcePin = cardManager.transmit(new CommandAPDU(0xB0, 0x20, 0x00, 0x00, pin2));
+
+            //Start DH
+            KeyPairGenerator hostKeyGen = KeyPairGenerator.getInstance("DH");
+            KeyAgreement dhAlgorithm = KeyAgreement.getInstance("DH");
+            DHParameterSpec dhKeySpecs = new DHParameterSpec(DH_GRP_14_P, DH_GRP_14_G);
+            hostKeyGen.initialize(dhKeySpecs);
+            //Private Key
+            KeyPair hostKey = hostKeyGen.generateKeyPair();
+            DHPublicKey hostPublicKey = (DHPublicKey) hostKey.getPublic();
+
+            //Init card
+            System.out.println("Init Smart Card DH Algo...");
+            ResponseAPDU resp1 = cardManager.transmit(new CommandAPDU((byte) 0xB0, (byte) 0xDC, (byte) 0x00, (byte) 0x00, (byte) 0x00));
+
+            System.out.println("Get card Y value...");
+            ResponseAPDU yValResp = cardManager.transmit(new CommandAPDU((byte) 0xB0, (byte) 0xDD, (byte) 0x10, (byte) 0x00, (byte) 0x00));
+            byte[] hexBytes = new byte[257];
+            System.arraycopy(yValResp.getData(), 0, hexBytes, 1, yValResp.getData().length);
+
+            BigInteger DH_Y = new BigInteger(hexBytes);
+            DHPublicKey cardPublicKey = (DHPublicKey) KeyFactory.getInstance("DH").generatePublic(new DHPublicKeySpec(DH_Y, DH_GRP_14_P, DH_GRP_14_G));
+            dhAlgorithm.init(hostKey.getPrivate());
+            dhAlgorithm.doPhase(cardPublicKey, true);
+
+            //Send host Y to the card
+            hexBytes = new byte[256];
+            int offset;
+            if(hostPublicKey.getY().toByteArray().length > 256) {
+                offset = 1;
+            }
+            else {
+                offset = 0;
+            }
+
+            //System.arraycopy(setCardYApdu, 0, hexBytes, 0, setCardYApdu.length);
+            System.arraycopy(hostPublicKey.getY().toByteArray(), offset, hexBytes, 0, 256);
+            CommandAPDU setY = new CommandAPDU((byte) 0xB0, (byte) 0xDE, (byte) 0x10, (byte) 0x00, hexBytes);
+
+            //Problem with sending 256 bytes of data
+            ResponseAPDU resp3 = cardManager.transmit(setY);
+            //Finish
+            System.out.println("Finalize DH on card side...");
+            //ResponseAPDU resp3 = cardManager.transmit(new CommandAPDU((byte) 0xB0, (byte) 0xDF, (byte) 0x00, (byte) 0x00, (byte) 0x00));
+        }
+    }
 }
