@@ -13,6 +13,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     //INS
     private static final byte INS_SELECT = (byte)0xA4;
     private static final byte INS_GENERATE_KEYPAIR = (byte)0xDB;
+    private static final byte INS_INIT = (byte) 0xDC;
     private static final byte INS_VERIFY = (byte)0x20;
 
     //Security
@@ -24,7 +25,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
     private RandomData random;
 
-    OwnerPIN cardPIN;
+    private DH dh;
+    private OwnerPIN cardPIN;
 
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
@@ -37,6 +39,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         cardPIN.update(buffer, offset, length);
         //random = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
         register();
+        
+        dh = new DH();
     }
 
     public void process(APDU apdu)
@@ -66,6 +70,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             case INS_SELECT:
                 select();
                 break;
+                
+            case INS_INIT:
+                dh.init();
+                break;
+                
             case INS_VERIFY:
                 verify(apdu);
                 break;
