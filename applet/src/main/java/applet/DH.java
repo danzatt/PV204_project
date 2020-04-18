@@ -7,6 +7,7 @@ package src.main.java.applet;
 
 import javacard.framework.JCSystem;
 import javacard.framework.TransactionException;
+import javacard.framework.Util;
 import javacard.security.AESKey;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
@@ -81,17 +82,22 @@ public class DH {
     };
     
     public static final short maxLength = 256;
-    private byte[] G = new byte[256];
-    private byte[] Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
-    private byte[] S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
+    private byte[] G; 
+    private byte[] Y;
+    private byte[] S;
     
     public DH() {
+        
+        //init values
+        G = new byte[maxLength];
+        Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_DESELECT);
+        S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_DESELECT);
         
         dhKey = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, KeyBuilder.LENGTH_RSA_2048, false);
         
         dhCipher = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
         
-        G[255] = (byte) 0x02;
+        G[(short) (maxLength - 1)] = (byte) 0x02;
     }
     
     public void init() {
@@ -116,7 +122,8 @@ public class DH {
     }
 
     public void getY(byte[] output, short offset) {
-        ArrayLogic.arrayCopyRepackNonAtomic(Y, (short) 0, maxLength, output, offset);
+        //ArrayLogic.arrayCopyRepackNonAtomic(Y, (short) 0, maxLength, output, offset);
+        Util.arrayCopyNonAtomic(Y, (short) 0, output, offset, maxLength);
     }
     
     public void setY(byte[] data, short offset, short length, short yOffset) throws ArrayIndexOutOfBoundsException, NullPointerException, TransactionException, UtilException {

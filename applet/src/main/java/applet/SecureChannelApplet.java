@@ -13,9 +13,18 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     //INS
     private static final byte INS_SELECT = (byte)0xA4;
     private static final byte INS_GENERATE_KEYPAIR = (byte)0xDB;
-    private static final byte INS_INIT = (byte) 0xDC;
+    
+    private static final byte INS_DH_INIT = (byte) 0xDC;
+    private static final byte INS_GET = (byte) 0xDD;
+    private static final byte INS_SET = (byte) 0xDE;
+    private static final byte INS_DH_FINALIZE = (byte) 0xDF;
+    
     private static final byte INS_VERIFY = (byte)0x20;
-
+    
+    private static final byte P1_Y = (byte) 0x10;
+    private static final byte P1_P = (byte) 0x11;
+    private static final byte P1_G = (byte) 0x12;
+    
     //Security
     private static final byte PIN_RETRIES = (byte) 0x03;
     private static final byte PIN_MAX_LENGTH = (byte) 0x04;
@@ -41,6 +50,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         register();
         
         dh = new DH();
+        
     }
 
     public void process(APDU apdu)
@@ -70,11 +80,29 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             case INS_SELECT:
                 select();
                 break;
-                
-            case INS_INIT:
+            case INS_DH_INIT:
                 dh.init();
                 break;
-                
+            case INS_GET:
+                if(p1 == P1_Y) {
+                    apdu.setOutgoing();
+                    apdu.setOutgoingLength(DH.maxLength);
+                    dh.getY(apduBuffer, (short) 0);
+                    apdu.sendBytesLong(apduBuffer, (short) 0, DH.maxLength);
+                } else {
+                    ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+                }
+                return;
+            case INS_SET:
+                if(p1 == P1_Y) {
+                    dh.setY(apduBuffer, ISO7816.OFFSET_CDATA, DH.maxLength, (short) 0);
+                } else {
+                    ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+                }
+                return;
+            case INS_DH_FINALIZE:
+                //dh.doFinal(null);
+                break;
             case INS_VERIFY:
                 verify(apdu);
                 break;
