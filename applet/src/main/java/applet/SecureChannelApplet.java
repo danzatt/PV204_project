@@ -1,48 +1,180 @@
-package applet;
+package src.main.java.applet;
 
 import javacard.framework.*;
+import javacard.security.CryptoException;
 import javacard.security.RandomData;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
-	private static final short BUFFER_SIZE = 32;
+    
+    // Main instruction class
+    
+    final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
+    
+    // Instructions
+    
+    // Error codes
+    
+    final static short SW_BAD_TEST_DATA_LEN = (short) 0x6680;
+    final static short SW_KEY_LENGTH_BAD = (short) 0x6715;
+    final static short SW_CIPHER_DATA_LENGTH_BAD = (short) 0x6710;
+    final static short SW_OBJECT_NOT_AVAILABLE = (short) 0x6711;
+    final static short SW_BAD_PIN = (short) 0x6900;
 
-	private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
-	private RandomData random;
+    final static short SW_Exception = (short) 0xff01;
+    final static short SW_ArrayIndexOutOfBoundsException = (short) 0xff02;
+    final static short SW_ArithmeticException = (short) 0xff03;
+    final static short SW_ArrayStoreException = (short) 0xff04;
+    final static short SW_NullPointerException = (short) 0xff05;
+    final static short SW_NegativeArraySizeException = (short) 0xff06;
+    final static short SW_CryptoException_prefix = (short) 0xf100;
+    final static short SW_SystemException_prefix = (short) 0xf200;
+    final static short SW_PINException_prefix = (short) 0xf300;
+    final static short SW_TransactionException_prefix = (short) 0xf400;
+    final static short SW_CardRuntimeException_prefix = (short) 0xf500;
+    
+    private static final short BUFFER_SIZE = 32;
 
-	public static void install(byte[] bArray, short bOffset, byte bLength) 
-	{
-		new SecureChannelApplet(bArray, bOffset, bLength);
-	}
-	
-	public SecureChannelApplet(byte[] buffer, short offset, byte length)
-	{
-		random = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
-		register();
-	}
+    private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
+    private RandomData random;
 
-	public void process(APDU apdu)
-	{
-		byte[] apduBuffer = apdu.getBuffer();
-		byte cla = apduBuffer[ISO7816.OFFSET_CLA];
-		byte ins = apduBuffer[ISO7816.OFFSET_INS];
-		short lc = (short)apduBuffer[ISO7816.OFFSET_LC];
-		short p1 = (short)apduBuffer[ISO7816.OFFSET_P1];
-		short p2 = (short)apduBuffer[ISO7816.OFFSET_P2];
+    public static void install(byte[] bArray, short bOffset, byte bLength) 
+    {
+        new SecureChannelApplet(bArray, bOffset, bLength);
+    }
 
-		random.generateData(tmpBuffer, (short) 0, BUFFER_SIZE);
+    public SecureChannelApplet(byte[] buffer, short offset, byte length)
+    {
+        register();
+    }
 
-		Util.arrayCopyNonAtomic(tmpBuffer, (short)0, apduBuffer, (short)0, BUFFER_SIZE);
-		apdu.setOutgoingAndSend((short)0, BUFFER_SIZE);
-	}
+    @Override
+    public void process(APDU apdu) throws ISOException {
+        // get the buffer with incoming APDU
+        byte[] apduBuffer = apdu.getBuffer();
+        byte cla = apduBuffer[ISO7816.OFFSET_CLA];
+        byte ins = apduBuffer[ISO7816.OFFSET_INS];
+        short lc = (short)apduBuffer[ISO7816.OFFSET_LC];
+        short p1 = (short)apduBuffer[ISO7816.OFFSET_P1];
+        short p2 = (short)apduBuffer[ISO7816.OFFSET_P2];
 
-	@Override
-	public boolean select(boolean b) {
-		return true;
-	}
+        // ignore the applet select command dispached to the process
+        if (selectingApplet()) {
+            return;
+        }
 
-	@Override
-	public void deselect(boolean b) {
+        try {
+            // APDU instruction parser
+            if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
+                switch (apduBuffer[ISO7816.OFFSET_INS]) {
+                    
+                    default:
+                        // The INS code is not supported by the dispatcher
+                        ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+                        break;
+                }
+            } else {
+                ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+            }
 
-	}
+            // Capture all reasonable exceptions and change into readable ones (instead of 0x6f00) 
+        } catch (ISOException e) {
+            throw e; // Our exception from code, just re-emit
+        } catch (ArrayIndexOutOfBoundsException e) {
+            ISOException.throwIt(SW_ArrayIndexOutOfBoundsException);
+        } catch (ArithmeticException e) {
+            ISOException.throwIt(SW_ArithmeticException);
+        } catch (ArrayStoreException e) {
+            ISOException.throwIt(SW_ArrayStoreException);
+        } catch (NullPointerException e) {
+            ISOException.throwIt(SW_NullPointerException);
+        } catch (NegativeArraySizeException e) {
+            ISOException.throwIt(SW_NegativeArraySizeException);
+        } catch (CryptoException e) {
+            ISOException.throwIt((short) (SW_CryptoException_prefix | e.getReason()));
+        } catch (SystemException e) {
+            ISOException.throwIt((short) (SW_SystemException_prefix | e.getReason()));
+        } catch (PINException e) {
+            ISOException.throwIt((short) (SW_PINException_prefix | e.getReason()));
+        } catch (TransactionException e) {
+            ISOException.throwIt((short) (SW_TransactionException_prefix | e.getReason()));
+        } catch (CardRuntimeException e) {
+            ISOException.throwIt((short) (SW_CardRuntimeException_prefix | e.getReason()));
+        } catch (Exception e) {
+            ISOException.throwIt(SW_Exception);
+        }
+    }
+    
+    @Override
+    public boolean select(boolean b) {
+        clearSessionData();
+        return true;
+    }
+
+    @Override
+    public void deselect(boolean b) {
+        clearSessionData();
+    }
+
+    void clearSessionData() {
+        //TODO: add data clening
+    }
+
+    void Encrypt(APDU apdu) {
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = apdu.setIncomingAndReceive();
+
+        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
+        if ((dataLen % 16) != 0) {
+            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+        }
+
+        // ENCRYPT INCOMING BUFFER
+        // TODO: add buffer encryption
+        // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
+
+        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
+        //Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+
+        // SEND OUTGOING BUFFER
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+    }
+    
+    void Decrypt(APDU apdu) {
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = apdu.setIncomingAndReceive();
+
+        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
+        if ((dataLen % 16) != 0) {
+            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+        }
+
+        // ENCRYPT INCOMING BUFFER
+        // TODO: add decryption
+
+        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
+        //Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+
+        // SEND OUTGOING BUFFER
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+    }
+    
+    // HASH INCOMING BUFFER
+    void Hash(APDU apdu) {
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = apdu.setIncomingAndReceive();
+
+        // TODO: Implement hashing
+        /*if (m_hash != null) {
+            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+        } else {
+            ISOException.throwIt(SW_OBJECT_NOT_AVAILABLE);
+        }
+
+        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
+
+        // SEND OUTGOING BUFFER
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
+    }
 }
