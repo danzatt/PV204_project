@@ -2,6 +2,10 @@ package src.main.java.applet;
 
 import javacard.framework.*;
 import javacard.security.CryptoException;
+import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
+import javacard.security.KeyAgreement;
+import javacard.security.KeyPair;
 import javacard.security.RandomData;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
@@ -12,7 +16,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
     
     // Instructions
-    
+    final static byte INS_INIT_ECDH = (byte) 0x50;
     // Error codes
     
     final static short SW_BAD_TEST_DATA_LEN = (short) 0x6680;
@@ -36,8 +40,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private static final short BUFFER_SIZE = 32;
 
     private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
+    byte[] baTemp;
     private RandomData random;
 
+    KeyPair kpU;
+    ECPrivateKey privKeyU;
+    ECPublicKey pubKeyU;
+        
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
         new SecureChannelApplet(bArray, bOffset, bLength);
@@ -45,6 +54,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {
+        baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         register();
     }
 
@@ -52,6 +62,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     public void process(APDU apdu) throws ISOException {
         // get the buffer with incoming APDU
         byte[] apduBuffer = apdu.getBuffer();
+        short receivedLen = apdu.setIncomingAndReceive();
         byte cla = apduBuffer[ISO7816.OFFSET_CLA];
         byte ins = apduBuffer[ISO7816.OFFSET_INS];
         short lc = (short)apduBuffer[ISO7816.OFFSET_LC];
@@ -67,7 +78,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             // APDU instruction parser
             if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
-                    
+                    case INS_INIT_ECDH:
+                        initECDH(apdu, receivedLen);
+                        break;
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -176,5 +189,34 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
+    }
+
+    private void initECDH(APDU apdu, short receivedLength) {
+        if (receivedLength != SecureChannelConfig.publicKeyBytes)
+		{
+			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+		}
+		kpU = SecP256k1.newKeyPair();
+		kpU.genKeyPair();
+		privKeyU = (ECPrivateKey) kpU.getPrivate();
+		pubKeyU = (ECPublicKey) kpU.getPublic();
+
+		byte[] sharedSecret = new byte[64];
+
+		KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+		keyAgreement.init(privKeyU);
+                try {
+                    keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
+                } catch (CryptoException e){
+                    ISOException.throwIt(SW_CryptoException_prefix);
+                } catch (Exception e) {
+                    ISOException.throwIt(SW_CryptoException_prefix);
+                }
+                
+                short len = pubKeyU.getW(baTemp,(short) 0);
+                apdu.setOutgoing();
+		apdu.setOutgoingLength((short) len);
+		apdu.sendBytesLong(baTemp,(short) 0,len);
+		
     }
 }
