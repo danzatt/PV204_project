@@ -1,12 +1,14 @@
 package src.main.java.applet;
 
 import javacard.framework.*;
+import javacard.security.AESKey;
 import javacard.security.CryptoException;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyPair;
 import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
@@ -46,6 +48,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     KeyPair kpU;
     ECPrivateKey privKeyU;
     ECPublicKey pubKeyU;
+    private AESKey dataKey;
+    private Cipher dataEncryptCipher;
+    private Cipher dataDecryptCipher;
     private byte[] sharedSecret;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
@@ -145,11 +150,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
 
         // ENCRYPT INCOMING BUFFER
-        // TODO: add buffer encryption
+        dataEncryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, tmpBuffer, (short) 0);
         // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        //Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+        Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
@@ -165,10 +170,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
 
         // ENCRYPT INCOMING BUFFER
-        // TODO: add decryption
+        dataDecryptCipher.doFinal(apdubuf, (short) 0, dataLen, tmpBuffer, (short) 0);
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        //Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+        Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
