@@ -8,6 +8,7 @@ import javacard.framework.AID;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
@@ -81,9 +82,12 @@ public class HostApp {
         hPin = Arrays.copyOf(hPin, 16);
         SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hPin, "AES");
 
-        Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
+        Cipher cipher = Cipher.getInstance("AES/ECB/NOPADDING");
         cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec);
+//        cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec, new IvParameterSpec(new byte[16]));
+        printBytes(publicKeyWRaw);
         byte[] publicKeyWRawEncrypted = cipher.doFinal(publicKeyWRaw);
+        printBytes(publicKeyWRawEncrypted);
 
         CommandAPDU commandAPDU = new CommandAPDU(CLA_SIMPLEAPPLET, INS_DH_INIT, 0x00, 0x00, publicKeyWRawEncrypted);
         ResponseAPDU response = simulator.transmitCommand(commandAPDU);
@@ -118,6 +122,7 @@ public class HostApp {
         crypt.reset();
         crypt.update(aliceSharedSecret);
         sharedSecret = crypt.digest();
+        printBytes(sharedSecret);
     }
 
     private static void printBytes(byte[] data) {

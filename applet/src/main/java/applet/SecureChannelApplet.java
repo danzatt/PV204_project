@@ -13,6 +13,8 @@ import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 import org.omg.CORBA.DATA_CONVERSION;
 
+import java.util.Arrays;
+
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
     
@@ -206,7 +208,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
-        if (receivedLength != SecureChannelConfig.publicKeyBytes + 31)
+        if (receivedLength != (SecureChannelConfig.publicKeyBytes + 31))
         {
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
@@ -215,42 +217,37 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
-        byte[] hashedPin = new byte[20];
-        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPin);
+        byte[] hashedPinFull = new byte[20];
+        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPinFull);
 
-        byte[] cryptBuffer = new byte[SecureChannelConfig.publicKeyBytes + 31];
+        byte[] hashedPin = new byte[16];
+        Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
+
+        byte[] cryptBuffer = new byte[receivedLength];
 
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
-        decryptPublicKey(hashedPin, apdu.getBuffer(), ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0);
-        short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
 
+        if (cryptPublicKey(hashedPin, apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+
+        short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, sharedSecret, (short) 0);
         short len = pubKeyU.getW(baTemp,(short) 0);
-
-        short length = encryptPublicKey(hashedPin, baTemp, cryptBuffer, (short) 0);
+        short length = cryptPublicKey(hashedPin, baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
 
         apdu.setOutgoing();
         apdu.setOutgoingLength((short) cryptBuffer.length);
         apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
     }
 
-    private short encryptPublicKey(byte[] key, byte[] dataToEncrypt, byte[] out, short offset) {
-        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+    private short cryptPublicKey(byte[] key, byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
+        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
 
         aesKey.setKey(key, (short) 0);
-        aesCipher.init(aesKey, Cipher.MODE_ENCRYPT);
+        aesCipher.init(aesKey, mode);
 
-        return aesCipher.doFinal(dataToEncrypt, (short) 0, (short) dataToEncrypt.length, out, offset);
-    }
-
-    private short decryptPublicKey(byte[] key, byte[] dataToDecrypt, short decryptOffset, byte[] out, short offset) {
-        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
-        
-        aesKey.setKey(key, (short) 0);
-        aesCipher.init(aesKey, Cipher.MODE_DECRYPT);
-        
-        return aesCipher.doFinal(dataToDecrypt, (short) decryptOffset, (short) dataToDecrypt.length, out, offset);
+        return aesCipher.doFinal(dataToCrypt, (short) decryptOffset, cryptLength, out, offset);
     }
 }
