@@ -140,9 +140,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         //TODO: add data clening
     }
 
-    void Encrypt(APDU apdu) {
+    void Encrypt(APDU apdu, short dataLen) {
         byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
+        
 
         // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
         if ((dataLen % 16) != 0) {
@@ -160,9 +160,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
     }
     
-    void Decrypt(APDU apdu) {
+    void Decrypt(APDU apdu, short dataLen) {
         byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
 
         // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
         if ((dataLen % 16) != 0) {
@@ -170,7 +169,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
 
         // ENCRYPT INCOMING BUFFER
-        dataDecryptCipher.doFinal(apdubuf, (short) 0, dataLen, tmpBuffer, (short) 0);
+        dataDecryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, tmpBuffer, (short) 0);
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
         Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
