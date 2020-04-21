@@ -205,18 +205,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
 		KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
 		keyAgreement.init(privKeyU);
-                try {
-                    keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
-                } catch (CryptoException e){
-                    ISOException.throwIt(SW_CryptoException_prefix);
-                } catch (Exception e) {
-                    ISOException.throwIt(SW_CryptoException_prefix);
-                }
-                
-                short len = pubKeyU.getW(baTemp,(short) 0);
-                apdu.setOutgoing();
+        short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
+
+        short len = pubKeyU.getW(baTemp,(short) 0);
+        apdu.setOutgoing();
 		apdu.setOutgoingLength((short) len);
 		apdu.sendBytesLong(baTemp,(short) 0,len);
-		
     }
 }
