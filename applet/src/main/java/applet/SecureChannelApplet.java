@@ -1,13 +1,17 @@
 package src.main.java.applet;
 
 import javacard.framework.*;
+import javacard.security.AESKey;
 import javacard.security.CryptoException;
 import javacard.security.MessageDigest;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
+import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
+import org.omg.CORBA.DATA_CONVERSION;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
@@ -216,8 +220,26 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
 
         short len = pubKeyU.getW(baTemp,(short) 0);
+        
+        byte[] hashedPin = new byte[20];
+        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPin);
+        
+        byte[] encryptedSecret = new byte[SecureChannelConfig.publicKeyBytes + 31];
+        short length = encryptPublicKey(hashedPin, baTemp, encryptedSecret, (short) 0);
+        
+        
         apdu.setOutgoing();
-        apdu.setOutgoingLength((short) len);
-        apdu.sendBytesLong(baTemp,(short) 0,len);
+        apdu.setOutgoingLength((short) length);
+        apdu.sendBytesLong(encryptedSecret,(short) 0, length);
+    }
+    
+    private short encryptPublicKey(byte[] key, byte[] dataToEncrypt, byte[] out, short offset) {
+        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        
+        aesKey.setKey(key, (short) 0);
+        aesCipher.init(aesKey, Cipher.MODE_ENCRYPT);
+        
+        return aesCipher.doFinal(dataToEncrypt, (short) 0, (short) dataToEncrypt.length, out, offset);
     }
 }
