@@ -59,8 +59,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     {
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
-            // Init hashing
-            hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        // Init hashing
+        hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
         register();
     }
 
@@ -213,6 +213,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
+        short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
 
         short len = pubKeyU.getW(baTemp,(short) 0);
         apdu.setOutgoing();
