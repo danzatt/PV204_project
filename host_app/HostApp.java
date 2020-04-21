@@ -91,8 +91,8 @@ public class HostApp {
         printBytes(response.getData());
         System.out.println("Data length: " + response.getData().length);
 
-        if (response.getData().length != (1 + publicKeyX.length * 2) || response.getData()[0] != 0x04) {
-            throw new IllegalArgumentException("Wrong public key from card.");
+        if (response.getData().length != (1 + publicKeyX.length * 2) + 31) {
+            throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
         }
 
         byte[] cardPublicKeyX = new byte[publicKeyX.length];

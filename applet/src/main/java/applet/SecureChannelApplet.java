@@ -206,7 +206,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
-        if (receivedLength != SecureChannelConfig.publicKeyBytes)
+        if (receivedLength != SecureChannelConfig.publicKeyBytes + 31)
         {
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
@@ -215,31 +215,42 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
+        byte[] hashedPin = new byte[20];
+        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPin);
+
+        byte[] cryptBuffer = new byte[SecureChannelConfig.publicKeyBytes + 31];
+
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
+        decryptPublicKey(hashedPin, apdu.getBuffer(), ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0);
         short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
 
         short len = pubKeyU.getW(baTemp,(short) 0);
-        
-        byte[] hashedPin = new byte[20];
-        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPin);
-        
-        byte[] encryptedSecret = new byte[SecureChannelConfig.publicKeyBytes + 31];
-        short length = encryptPublicKey(hashedPin, baTemp, encryptedSecret, (short) 0);
-        
-        
+
+        short length = encryptPublicKey(hashedPin, baTemp, cryptBuffer, (short) 0);
+
         apdu.setOutgoing();
-        apdu.setOutgoingLength((short) length);
-        apdu.sendBytesLong(encryptedSecret,(short) 0, length);
+        apdu.setOutgoingLength((short) cryptBuffer.length);
+        apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
     }
-    
+
     private short encryptPublicKey(byte[] key, byte[] dataToEncrypt, byte[] out, short offset) {
+        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+
+        aesKey.setKey(key, (short) 0);
+        aesCipher.init(aesKey, Cipher.MODE_ENCRYPT);
+
+        return aesCipher.doFinal(dataToEncrypt, (short) 0, (short) dataToEncrypt.length, out, offset);
+    }
+
+    private short decryptPublicKey(byte[] key, byte[] dataToDecrypt, short decryptOffset, byte[] out, short offset) {
         AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         
         aesKey.setKey(key, (short) 0);
-        aesCipher.init(aesKey, Cipher.MODE_ENCRYPT);
+        aesCipher.init(aesKey, Cipher.MODE_DECRYPT);
         
-        return aesCipher.doFinal(dataToEncrypt, (short) 0, (short) dataToEncrypt.length, out, offset);
+        return aesCipher.doFinal(dataToDecrypt, (short) decryptOffset, (short) dataToDecrypt.length, out, offset);
     }
 }
