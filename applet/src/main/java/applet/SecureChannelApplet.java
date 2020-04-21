@@ -2,6 +2,7 @@ package src.main.java.applet;
 
 import javacard.framework.*;
 import javacard.security.CryptoException;
+import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
@@ -37,6 +38,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
     private RandomData random;
+    private MessageDigest hash;
 
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
@@ -45,6 +47,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {
+        
+        //if (length > 9) {
+            
+            // Init hashing
+            hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        //}
+        
         register();
     }
 
@@ -157,6 +166,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+    }
+    
+    void HashPIN(byte[] pin, byte[] hashedPin) {
+        hash.doFinal(pin, (short) 0, (short) pin.length, hashedPin, (short) 0);
     }
     
     // HASH INCOMING BUFFER
