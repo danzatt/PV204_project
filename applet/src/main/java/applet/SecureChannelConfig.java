@@ -7,4 +7,5 @@ package src.main.java.applet;
 public class SecureChannelConfig {
     public final static short keySize = 256;
     public final static short publicKeyBytes = ((keySize/8) * 2) + 1;
+    public final static short secretLen = 20;
 }

@@ -46,6 +46,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     KeyPair kpU;
     ECPrivateKey privKeyU;
     ECPublicKey pubKeyU;
+    private byte[] sharedSecret;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
@@ -55,6 +56,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
+        sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
         register();
     }
 
@@ -193,23 +195,20 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     private void initECDH(APDU apdu, short receivedLength) {
         if (receivedLength != SecureChannelConfig.publicKeyBytes)
-		{
-			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-		}
-		kpU = SecP256k1.newKeyPair();
-		kpU.genKeyPair();
-		privKeyU = (ECPrivateKey) kpU.getPrivate();
-		pubKeyU = (ECPublicKey) kpU.getPublic();
+        {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+        kpU = SecP256k1.newKeyPair();
+        kpU.genKeyPair();
+        privKeyU = (ECPrivateKey) kpU.getPrivate();
+        pubKeyU = (ECPublicKey) kpU.getPublic();
 
-		byte[] sharedSecret = new byte[64];
-
-		KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		keyAgreement.init(privKeyU);
-        short secret_len = keyAgreement.generateSecret(apdu.getBuffer(), ISO7816.OFFSET_CDATA, receivedLength, sharedSecret, (short) 0);
+        KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        keyAgreement.init(privKeyU);
 
         short len = pubKeyU.getW(baTemp,(short) 0);
         apdu.setOutgoing();
-		apdu.setOutgoingLength((short) len);
-		apdu.sendBytesLong(baTemp,(short) 0,len);
+        apdu.setOutgoingLength((short) len);
+        apdu.sendBytesLong(baTemp,(short) 0,len);
     }
 }

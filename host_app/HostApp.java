@@ -5,28 +5,26 @@ import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import javacard.framework.AID;
 
-import javax.crypto.Cipher;
+
 import javax.crypto.KeyAgreement;
-import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import java.math.BigInteger;
-import java.security.AlgorithmParameters;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
-import java.security.spec.ECParameterSpec;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
-import java.security.spec.X509EncodedKeySpec;
 
 public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
+    
+    private static byte[] sharedSecret;
     /**
      * Main entry point.
      *
@@ -105,7 +103,7 @@ public class HostApp {
         MessageDigest crypt = MessageDigest.getInstance("SHA-1");
         crypt.reset();
         crypt.update(aliceSharedSecret);
-        byte[] sharedSecret = crypt.digest();
+        sharedSecret = crypt.digest();
     }
 
     private static void printBytes(byte[] data) {
