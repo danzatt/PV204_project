@@ -64,16 +64,17 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {   
-        byte[] hashedPinFull = new byte[20];
+        baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
+
+        //byte[] hashedPinFull = new byte[20];
         hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
-        hash.doFinal(buffer, (short) 0, (short) 4, hashedPinFull, (short) 0);
-        byte[] hashedPin = new byte[16];
-        Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
+        hash.doFinal(buffer, (short) 0, (short) 4, baTemp, (short) 0);
+        //byte[] hashedPin = new byte[16];
+        //Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
         
         pinKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        pinKey.setKey(hashedPin, (short) 0); 
+        pinKey.setKey(baTemp, (short) 0); 
         
-        baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
         // Init hashing
         register();
