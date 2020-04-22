@@ -33,13 +33,17 @@ import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
-import javax.print.DocFlavor;
 
 public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SECURECHANNEL = (byte) 0xB0;
 
+    private static SecretKeySpec sessionKeySpec;
+    private static Cipher sessionEncrypt;
+    private static Cipher sessionDecrypt;
+    private static byte[] sharedSecret;
+    
     private static byte[] trimLeadingZero(byte[] bytes) {
         if (bytes[0] == 0) {  // trim the leading zero
             byte[] tmp = new byte[bytes.length - 1];
@@ -144,6 +148,18 @@ public class HostApp {
         }
     }
 
+    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+        byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
+        sessionKeySpec = new SecretKeySpec(short_Key, "AES");
+        
+        sessionEncrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        sessionDecrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        
+        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec);
+        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec);
+        
+    }
+    
     /**
      * Main entry point.
      *
@@ -156,40 +172,24 @@ public class HostApp {
         simulator.installApplet(appletAID, SecureChannelApplet.class);
         simulator.selectApplet(appletAID);
 
-        byte[] sharedSecret = negotiateSecret(simulator);
+        sharedSecret = negotiateSecret(simulator);
+        
         printBytes(sharedSecret);
+        
+        initSessionKey();
     }
 
     private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
-            throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, 
-            IllegalBlockSizeException, BadPaddingException, ShortBufferException, 
-            InvalidAlgorithmParameterException {
+            throws ShortBufferException, IllegalBlockSizeException, 
+            BadPaddingException {
         
-        // Key for aes should be 16 byte
-        // Type will be AES.
-        //SecretKeySpec keySpec = new SecretKeySpec(sharedSecret, "AES");
-        //Cipher aesCipher = Cipher.getInstance("AES/ECB/NoPadding");
-        // For card side:
-        // KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        // Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
-        aesCipher.init(Cipher.ENCRYPT_MODE, keySpec);
-        return aesCipher.doFinal(data, 0, inDataLength, out);
+        return sessionEncrypt.doFinal(data, 0, inDataLength, out);
     }
 
     private static int Decrypt(byte[] data, int inDataLength, byte[] out) 
-            throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, 
-            IllegalBlockSizeException, BadPaddingException, ShortBufferException, 
-            InvalidAlgorithmParameterException {
-        
-        // Key for aes should be 16 byte
-        // Type will be AES.
-        //SecretKeySpec keySpec = new SecretKeySpec(sharedSecret, "AES");
-        //Cipher aesCipher = Cipher.getInstance("AES/ECB/NoPadding");
-        // For card side:
-        // KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        // Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
-        aesCipher.init(Cipher.DECRYPT_MODE, keySpec);
-        return aesCipher.doFinal(data, 0, inDataLength, out);
+            throws ShortBufferException, IllegalBlockSizeException, 
+            BadPaddingException {
+        return sessionDecrypt.doFinal(data, 0, inDataLength, out);
     }
     
     public static void printBytes(byte[] data) {
