@@ -11,7 +11,6 @@ import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
-import org.omg.CORBA.DATA_CONVERSION;
 
 import java.util.Arrays;
 
