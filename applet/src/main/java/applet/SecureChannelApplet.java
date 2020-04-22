@@ -9,6 +9,7 @@ import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
+import javacard.security.AESKey;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 
@@ -53,6 +54,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     KeyPair kpU;
     ECPrivateKey privKeyU;
     ECPublicKey pubKeyU;
+    private AESKey pinKey;
     private byte[] sharedSecret;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
@@ -65,6 +67,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         byte[] hashedPinFull = new byte[20];
         hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
         hash.doFinal(buffer, (short) 0, (short) 4, hashedPinFull, (short) 0);
+        byte[] hashedPin = new byte[16];
+        Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
+        
+        pinKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        pinKey.setKey(hashedPin, (short) 0); 
         
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
@@ -219,36 +226,34 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
-        byte[] hashedPinFull = new byte[20];
-        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPinFull);
+        //byte[] hashedPinFull = new byte[20];
+        //HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPinFull);
 
-        byte[] hashedPin = new byte[16];
-        Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
+        //byte[] hashedPin = new byte[16];
+        //Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
 
         byte[] cryptBuffer = new byte[receivedLength];
 
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
 
-        if (cryptPublicKey(hashedPin, apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
+        if (cryptPublicKey(apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
 
         short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, sharedSecret, (short) 0);
         short len = pubKeyU.getW(baTemp,(short) 0);
-        short length = cryptPublicKey(hashedPin, baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
+        short length = cryptPublicKey(baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
 
         apdu.setOutgoing();
         apdu.setOutgoingLength((short) cryptBuffer.length);
         apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
     }
 
-    private short cryptPublicKey(byte[] key, byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
-        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+    private short cryptPublicKey(byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
 
-        aesKey.setKey(key, (short) 0);
-        aesCipher.init(aesKey, mode);
+        aesCipher.init(pinKey, mode);
 
         return aesCipher.doFinal(dataToCrypt, (short) decryptOffset, cryptLength, out, offset);
     }
