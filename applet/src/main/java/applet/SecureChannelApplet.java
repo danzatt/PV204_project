@@ -57,6 +57,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private Cipher dataEncryptCipher;
     private Cipher dataDecryptCipher;
     private byte[] sharedSecret;
+    private byte[] hashed_pin;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
@@ -66,19 +67,21 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
-        sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
+        sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);
         
         dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
         dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
         
-        dataKey.setKey(aeskeytest, (short) 0);
-        
-        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT);
-        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT);
-        
         // Init hashing
         hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        
+        // TODO: setup pin
+        hashed_pin = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);;
+        HashPIN(new byte[]{'1', '2', '3', '4'}, hashed_pin);
+        
+        
+        
         register();
     }
 
@@ -228,28 +231,27 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
-        byte[] hashedPinFull = new byte[20];
-        HashPIN(new byte[]{'1', '2', '3', '4'}, hashedPinFull);
-
-        byte[] hashedPin = new byte[16];
-        Util.arrayCopyNonAtomic(hashedPinFull, (short) 0, hashedPin, (short) 0, (short) 16);
+        byte[] shortened_key = new byte[16];
+        Util.arrayCopyNonAtomic(hashed_pin, (short) 0, shortened_key, (short) 0, (short) 16);
 
         byte[] cryptBuffer = new byte[receivedLength];
 
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
 
-        if (cryptPublicKey(hashedPin, apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
+        if (cryptPublicKey(shortened_key, apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
 
         short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, sharedSecret, (short) 0);
         short len = pubKeyU.getW(baTemp,(short) 0);
-        short length = cryptPublicKey(hashedPin, baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
+        short length = cryptPublicKey(shortened_key, baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
 
         apdu.setOutgoing();
         apdu.setOutgoingLength((short) cryptBuffer.length);
         apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
+        
+        initSessionKey();
     }
 
     private short cryptPublicKey(byte[] key, byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
@@ -261,4 +263,17 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         return aesCipher.doFinal(dataToCrypt, (short) decryptOffset, cryptLength, out, offset);
     }
+    
+    private void initSessionKey() {
+        
+        byte[] shortened_key = new byte[16];
+        Util.arrayCopyNonAtomic(sharedSecret, (short) 0, shortened_key, (short) 0, (short) 16);
+        
+        dataKey.setKey(shortened_key, (short) 0);
+        
+        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT);
+        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT);
+    }
+    
+    
 }
