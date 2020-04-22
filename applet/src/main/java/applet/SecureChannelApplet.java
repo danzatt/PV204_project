@@ -62,6 +62,16 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     {
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
+        
+        dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+        dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+        
+        dataKey.setKey(aeskeytest, (short) 0);
+        
+        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT);
+        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT);
+        
         register();
     }
 

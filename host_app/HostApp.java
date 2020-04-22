@@ -6,23 +6,38 @@ import com.licel.jcardsim.utils.AIDUtil;
 import javacard.framework.AID;
 
 
+import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import java.math.BigInteger;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
+import java.util.Arrays;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.ShortBufferException;
+import javax.print.DocFlavor;
 
 public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
+    
+    private static SecretKeySpec keySpec;
+    private static Cipher aesCipher;
     
     private static byte[] sharedSecret;
     /**
@@ -106,7 +121,39 @@ public class HostApp {
         sharedSecret = crypt.digest();
     }
 
-    private static void printBytes(byte[] data) {
+    private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
+            throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, 
+            IllegalBlockSizeException, BadPaddingException, ShortBufferException, 
+            InvalidAlgorithmParameterException {
+        
+        // Key for aes should be 16 byte
+        // Type will be AES.
+        //SecretKeySpec keySpec = new SecretKeySpec(sharedSecret, "AES");
+        //Cipher aesCipher = Cipher.getInstance("AES/ECB/NoPadding");
+        // For card side:
+        // KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        // Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+        aesCipher.init(Cipher.ENCRYPT_MODE, keySpec);
+        return aesCipher.doFinal(data, 0, inDataLength, out);
+    }
+
+    private static int Decrypt(byte[] data, int inDataLength, byte[] out) 
+            throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, 
+            IllegalBlockSizeException, BadPaddingException, ShortBufferException, 
+            InvalidAlgorithmParameterException {
+        
+        // Key for aes should be 16 byte
+        // Type will be AES.
+        //SecretKeySpec keySpec = new SecretKeySpec(sharedSecret, "AES");
+        //Cipher aesCipher = Cipher.getInstance("AES/ECB/NoPadding");
+        // For card side:
+        // KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        // Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+        aesCipher.init(Cipher.DECRYPT_MODE, keySpec);
+        return aesCipher.doFinal(data, 0, inDataLength, out);
+    }
+    
+    public static void printBytes(byte[] data) {
         StringBuilder sb = new StringBuilder(data.length * 2);
         for(byte b: data)
             sb.append(String.format("%02x", b));
