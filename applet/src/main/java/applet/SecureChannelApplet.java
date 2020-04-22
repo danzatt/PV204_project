@@ -193,9 +193,6 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
         Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
     }
     
     void HashPIN(byte[] pin, byte[] hashedPin) {
