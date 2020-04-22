@@ -29,6 +29,10 @@ import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.ShortBufferException;
 
 public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
@@ -36,6 +40,11 @@ public class HostApp {
     final static byte CLA_SECURECHANNEL = (byte) 0xB0;
     final static byte[] pin = {'1', '2', '3', '4'};
 
+    private static SecretKeySpec sessionKeySpec;
+    private static Cipher sessionEncrypt;
+    private static Cipher sessionDecrypt;
+    private static byte[] sharedSecret;
+    
     private static byte[] trimLeadingZero(byte[] bytes) {
         if (bytes[0] == 0) {  // trim the leading zero
             byte[] tmp = new byte[bytes.length - 1];
@@ -140,6 +149,18 @@ public class HostApp {
         }
     }
 
+    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+        byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
+        sessionKeySpec = new SecretKeySpec(short_Key, "AES");
+        
+        sessionEncrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        sessionDecrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        
+        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec);
+        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec);
+        
+    }
+    
     /**
      * Main entry point.
      *
@@ -152,11 +173,27 @@ public class HostApp {
         simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
         simulator.selectApplet(appletAID);
 
-        byte[] sharedSecret = negotiateSecret(simulator);
+        sharedSecret = negotiateSecret(simulator);
+        
         printBytes(sharedSecret);
+        
+        initSessionKey();
     }
 
-    private static void printBytes(byte[] data) {
+    private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
+            throws ShortBufferException, IllegalBlockSizeException, 
+            BadPaddingException {
+        
+        return sessionEncrypt.doFinal(data, 0, inDataLength, out);
+    }
+
+    private static int Decrypt(byte[] data, int inDataLength, byte[] out) 
+            throws ShortBufferException, IllegalBlockSizeException, 
+            BadPaddingException {
+        return sessionDecrypt.doFinal(data, 0, inDataLength, out);
+    }
+    
+    public static void printBytes(byte[] data) {
         StringBuilder sb = new StringBuilder(data.length * 2);
         for(byte b: data)
             sb.append(String.format("%02x", b));
