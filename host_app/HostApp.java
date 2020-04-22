@@ -1,70 +1,56 @@
 package host;
 
+import host_app.Config;
 import src.main.java.applet.SecureChannelApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import javacard.framework.AID;
 
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyAgreement;
-import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import java.math.BigInteger;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
+import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
 
 public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
-    final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
-    final static byte[] pin = {'1', '2', '3', '4'};
-    
-    private static byte[] sharedSecret;
-    /**
-     * Main entry point.
-     *
-     * @param args
-     */
-    public static void main(String[] args) throws Exception {
-        CardSimulator simulator = new CardSimulator();
+    final static byte CLA_SECURECHANNEL = (byte) 0xB0;
 
-        System.out.println("ALICE: Generate DH keypair ...");
-        KeyPairGenerator aliceKpairGen = KeyPairGenerator.getInstance("EC");
-
-        aliceKpairGen.initialize(CurveSpecs.EC_P256K_PARAMS);
-        KeyPair aliceKpair = aliceKpairGen.generateKeyPair();
-
-        // Alice creates and initializes her ECDH KeyAgreement object
-        System.out.println("ALICE: Initialization ...");
-        KeyAgreement aliceKeyAgree = KeyAgreement.getInstance("ECDH");
-        aliceKeyAgree.init(aliceKpair.getPrivate());
-
-        // Alice encodes her public key, and sends it over to Bob.
-        byte[] alicePubKeyEnc = aliceKpair.getPublic().getEncoded();
-
-        ECPoint publicKey = ((ECPublicKey) aliceKpair.getPublic()).getW();
-        byte[] publicKeyX = publicKey.getAffineX().toByteArray();
-        if (publicKeyX[0] == 0) {  // trim the leading zero
-            byte[] tmp = new byte[publicKeyX.length - 1];
-            System.arraycopy(publicKeyX, 1, tmp, 0, tmp.length);
-            publicKeyX = tmp;
+    private static byte[] trimLeadingZero(byte[] bytes) {
+        if (bytes[0] == 0) {  // trim the leading zero
+            byte[] tmp = new byte[bytes.length - 1];
+            System.arraycopy(bytes, 1, tmp, 0, tmp.length);
+            return tmp;
         }
+        return bytes;
+    }
 
-        byte[] publicKeyY = publicKey.getAffineY().toByteArray();
-        if (publicKeyY[0] == 0) {  // trim the leading zero
-            byte[] tmp = new byte[publicKeyY.length - 1];
-            System.arraycopy(publicKeyY, 1, tmp, 0, tmp.length);
-            publicKeyY = tmp;
+    private static byte[] publicKeyToRaw(ECPublicKey pubKey) {
+        ECPoint publicKeyPoint = pubKey.getW();
+        byte[] publicKeyX = trimLeadingZero(publicKeyPoint.getAffineX().toByteArray());
+        byte[] publicKeyY = trimLeadingZero(publicKeyPoint.getAffineY().toByteArray());
+
+        if (publicKeyX.length != Config.singleCoordLength || publicKeyY.length != Config.singleCoordLength) {
+            throw new IllegalArgumentException("Different key length than configured.");
         }
 
         byte[] publicKeyWRaw = new byte[1 + publicKeyX.length * 2 + 31];
@@ -72,56 +58,100 @@ public class HostApp {
         System.arraycopy(publicKeyX, 0, publicKeyWRaw, 1, publicKeyX.length);
         System.arraycopy(publicKeyY, 0, publicKeyWRaw, 1 + publicKeyX.length, publicKeyY.length);
 
-        AID appletAID = AIDUtil.create(APPLET_AID);
-        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 0, (byte) pin.length);
+        return publicKeyWRaw;
+    }
 
-        simulator.selectApplet(appletAID);
+    private static ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
+        byte[] cardPublicKeyX = new byte[Config.singleCoordLength];
+        byte[] cardPublicKeyY = new byte[Config.singleCoordLength];
 
-        MessageDigest sha = MessageDigest.getInstance("SHA-1");
-        byte[] hPin = sha.digest(pin);
-        hPin = Arrays.copyOf(hPin, 16);
-        SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hPin, "AES");
-
-        Cipher cipher = Cipher.getInstance("AES/ECB/NOPADDING");
-        cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec);
-//        cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec, new IvParameterSpec(new byte[16]));
-        printBytes(publicKeyWRaw);
-        byte[] publicKeyWRawEncrypted = cipher.doFinal(publicKeyWRaw);
-        printBytes(publicKeyWRawEncrypted);
-
-        CommandAPDU commandAPDU = new CommandAPDU(CLA_SIMPLEAPPLET, INS_DH_INIT, 0x00, 0x00, publicKeyWRawEncrypted);
-        ResponseAPDU response = simulator.transmitCommand(commandAPDU);
-        System.out.println(response);
-        printBytes(response.getData());
-        System.out.println("Data length: " + response.getData().length);
-
-        if (response.getData().length != (1 + publicKeyX.length * 2) + 31) {
-            throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
-        }
-
-        byte[] cardPublicKeyX = new byte[publicKeyX.length];
-        byte[] cardPublicKeyY = new byte[publicKeyX.length];
-
-        cipher.init(Cipher.DECRYPT_MODE, hPinAesKeySpec);
-        byte[] responseDecrypted = cipher.doFinal(response.getData());
-
-        System.arraycopy(responseDecrypted, 1, cardPublicKeyX, 0, publicKeyX.length);
-        System.arraycopy(responseDecrypted, 1 + publicKeyX.length, cardPublicKeyY, 0, publicKeyX.length);
+        System.arraycopy(publicKeyWRaw, 1, cardPublicKeyX, 0, Config.singleCoordLength);
+        System.arraycopy(publicKeyWRaw, 1 + Config.singleCoordLength, cardPublicKeyY, 0, Config.singleCoordLength);
 
         ECPoint ecPoint = new ECPoint(new BigInteger(cardPublicKeyX), new BigInteger(cardPublicKeyY));
         ECPublicKeySpec cardKeySpec = new ECPublicKeySpec(ecPoint, CurveSpecs.EC_P256K_PARAMS);
 
-        KeyFactory keyFactory = KeyFactory.getInstance("EC");
-        PublicKey cardPublicKey = keyFactory.generatePublic(cardKeySpec);
+        try {
+            KeyFactory keyFactory = KeyFactory.getInstance("EC");
+            return (ECPublicKey) keyFactory.generatePublic(cardKeySpec);
+        } catch (NoSuchAlgorithmException| InvalidKeySpecException e) {
+            return null;
+        }
+    }
 
-        aliceKeyAgree.doPhase(cardPublicKey, true);
+    private static byte[] hashPin(byte[] pin) {
+        try {
+            MessageDigest sha = MessageDigest.getInstance("SHA-1");
+            byte[] hPin = sha.digest(pin);
+            hPin = Arrays.copyOf(hPin, 16);
+            return hPin;
+        } catch (NoSuchAlgorithmException e) {
+            return null;
+        }
+    }
 
-        byte[] aliceSharedSecret = aliceKeyAgree.generateSecret();
+    private static byte[] negotiateSecret(CardSimulator simulator) {
+        try {
+            System.out.println("Generating ECDH keypair...");
+            KeyPairGenerator ECKeyPairGen = KeyPairGenerator.getInstance("EC");
+            ECKeyPairGen.initialize(CurveSpecs.EC_P256K_PARAMS);
+            KeyPair ECKeyPair = ECKeyPairGen.generateKeyPair();
 
-        MessageDigest crypt = MessageDigest.getInstance("SHA-1");
-        crypt.reset();
-        crypt.update(aliceSharedSecret);
-        sharedSecret = crypt.digest();
+            System.out.println("Initializating key agreement...");
+            KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
+            keyAgreement.init(ECKeyPair.getPrivate());
+
+            SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hashPin(new byte[]{'1', '2', '3', '4'}), "AES");
+
+            byte[] publicKeyWRaw = publicKeyToRaw((ECPublicKey) ECKeyPair.getPublic());
+
+            Cipher cipher = Cipher.getInstance("AES/ECB/NOPADDING");
+            cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec);
+            printBytes(publicKeyWRaw);
+            byte[] publicKeyWRawEncrypted = cipher.doFinal(publicKeyWRaw);
+            printBytes(publicKeyWRawEncrypted);
+
+            CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_DH_INIT, 0x00, 0x00, publicKeyWRawEncrypted);
+            ResponseAPDU response = simulator.transmitCommand(commandAPDU);
+            System.out.println(response);
+            printBytes(response.getData());
+            System.out.println("Data length: " + response.getData().length);
+
+            if (response.getData().length != Config.paddedKeySize) {
+                throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
+            }
+
+            cipher.init(Cipher.DECRYPT_MODE, hPinAesKeySpec);
+            byte[] responseDecrypted = cipher.doFinal(response.getData());
+
+            PublicKey cardPublicKey = publicKeyFromRaw(responseDecrypted);
+            keyAgreement.doPhase(cardPublicKey, true);
+
+            byte[] sharedSecretRaw = keyAgreement.generateSecret();
+
+            MessageDigest crypt = MessageDigest.getInstance("SHA-1");
+            crypt.reset();
+            crypt.update(sharedSecretRaw);
+            return crypt.digest();
+        } catch (NoSuchAlgorithmException| InvalidAlgorithmParameterException| InvalidKeyException|
+                    NoSuchPaddingException| IllegalBlockSizeException| BadPaddingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Main entry point.
+     *
+     * @param args
+     */
+    public static void main(String[] args) throws Exception {
+        CardSimulator simulator = new CardSimulator();
+        AID appletAID = AIDUtil.create(APPLET_AID);
+
+        simulator.installApplet(appletAID, SecureChannelApplet.class);
+        simulator.selectApplet(appletAID);
+
+        byte[] sharedSecret = negotiateSecret(simulator);
         printBytes(sharedSecret);
     }
 
