@@ -61,7 +61,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
-    {
+    {   
+        byte[] hashedPinFull = new byte[20];
+        HashPIN(buffer, hashedPinFull);
+        
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
         // Init hashing
@@ -184,7 +187,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
     
     void HashPIN(byte[] pin, byte[] hashedPin) {
-        hash.doFinal(pin, (short) 0, (short) pin.length, hashedPin, (short) 0);
+        hash.doFinal(pin, (short) 0, (short) 4, hashedPin, (short) 0);
     }
     
     // HASH INCOMING BUFFER
