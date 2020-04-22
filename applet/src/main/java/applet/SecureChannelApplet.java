@@ -63,12 +63,12 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
     {   
         byte[] hashedPinFull = new byte[20];
-        HashPIN(buffer, hashedPinFull);
+        hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        hash.doFinal(buffer, (short) 0, (short) 4, hashedPinFull, (short) 0);
         
         baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_DESELECT);
         // Init hashing
-        hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
         register();
     }
 
