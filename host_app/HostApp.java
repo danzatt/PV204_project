@@ -35,6 +35,7 @@ public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
+    final static byte[] pin = {'1', '2', '3', '4'};
     
     private static SecretKeySpec keySpec;
     private static Cipher aesCipher;
@@ -77,7 +78,7 @@ public class HostApp {
             publicKeyY = tmp;
         }
 
-        byte[] publicKeyWRaw = new byte[1 + publicKeyX.length * 2];
+        byte[] publicKeyWRaw = new byte[1 + publicKeyX.length * 2 + 31];
         publicKeyWRaw[0] = 0x04; // uncompressed form
         System.arraycopy(publicKeyX, 0, publicKeyWRaw, 1, publicKeyX.length);
         System.arraycopy(publicKeyY, 0, publicKeyWRaw, 1 + publicKeyX.length, publicKeyY.length);
@@ -87,23 +88,36 @@ public class HostApp {
 
         simulator.selectApplet(appletAID);
 
-        CommandAPDU commandAPDU = new CommandAPDU(CLA_SIMPLEAPPLET, INS_DH_INIT, 0x00, 0x00, publicKeyWRaw);
+        MessageDigest sha = MessageDigest.getInstance("SHA-1");
+        byte[] hPin = sha.digest(pin);
+        hPin = Arrays.copyOf(hPin, 16);
+        SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hPin, "AES");
+
+        Cipher cipher = Cipher.getInstance("AES/ECB/NOPADDING");
+        cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec);
+//        cipher.init(Cipher.ENCRYPT_MODE, hPinAesKeySpec, new IvParameterSpec(new byte[16]));
+        printBytes(publicKeyWRaw);
+        byte[] publicKeyWRawEncrypted = cipher.doFinal(publicKeyWRaw);
+        printBytes(publicKeyWRawEncrypted);
+
+        CommandAPDU commandAPDU = new CommandAPDU(CLA_SIMPLEAPPLET, INS_DH_INIT, 0x00, 0x00, publicKeyWRawEncrypted);
         ResponseAPDU response = simulator.transmitCommand(commandAPDU);
         System.out.println(response);
-
         printBytes(response.getData());
-        System.out.println(response.getData().length);
-        System.out.println("Length: " + response.getData().length);
+        System.out.println("Data length: " + response.getData().length);
 
-        if (response.getData().length != (1 + publicKeyX.length * 2) || response.getData()[0] != 0x04) {
-            throw new IllegalArgumentException("Wrong public key from card.");
+        if (response.getData().length != (1 + publicKeyX.length * 2) + 31) {
+            throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
         }
 
         byte[] cardPublicKeyX = new byte[publicKeyX.length];
         byte[] cardPublicKeyY = new byte[publicKeyX.length];
 
-        System.arraycopy(response.getData(), 1, cardPublicKeyX, 0, publicKeyX.length);
-        System.arraycopy(response.getData(), 1 + publicKeyX.length, cardPublicKeyY, 0, publicKeyX.length);
+        cipher.init(Cipher.DECRYPT_MODE, hPinAesKeySpec);
+        byte[] responseDecrypted = cipher.doFinal(response.getData());
+
+        System.arraycopy(responseDecrypted, 1, cardPublicKeyX, 0, publicKeyX.length);
+        System.arraycopy(responseDecrypted, 1 + publicKeyX.length, cardPublicKeyY, 0, publicKeyX.length);
 
         ECPoint ecPoint = new ECPoint(new BigInteger(cardPublicKeyX), new BigInteger(cardPublicKeyY));
         ECPublicKeySpec cardKeySpec = new ECPublicKeySpec(ecPoint, CurveSpecs.EC_P256K_PARAMS);
@@ -119,6 +133,7 @@ public class HostApp {
         crypt.reset();
         crypt.update(aliceSharedSecret);
         sharedSecret = crypt.digest();
+        printBytes(sharedSecret);
     }
 
     private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
