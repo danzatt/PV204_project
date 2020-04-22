@@ -38,6 +38,7 @@ public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    final static byte[] pin = {'1', '2', '3', '4'};
 
     private static SecretKeySpec sessionKeySpec;
     private static Cipher sessionEncrypt;
@@ -169,7 +170,7 @@ public class HostApp {
         CardSimulator simulator = new CardSimulator();
         AID appletAID = AIDUtil.create(APPLET_AID);
 
-        simulator.installApplet(appletAID, SecureChannelApplet.class);
+        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
         simulator.selectApplet(appletAID);
 
         sharedSecret = negotiateSecret(simulator);

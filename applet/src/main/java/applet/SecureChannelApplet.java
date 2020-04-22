@@ -9,6 +9,7 @@ import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
+import javacard.security.AESKey;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 
@@ -44,15 +45,16 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
     
     private static final short BUFFER_SIZE = 32;
-
-    private byte[] tmpBuffer = JCSystem.makeTransientByteArray(BUFFER_SIZE, JCSystem.CLEAR_ON_DESELECT);
-    byte[] baTemp;
+    private static final short PIN_LENGTH = 4;
+    
+    private byte[] mRamArray;
     private RandomData random;
     private MessageDigest hash;
 
     KeyPair kpU;
     ECPrivateKey privKeyU;
     ECPublicKey pubKeyU;
+    private AESKey pinKey;
     private AESKey dataKey;
     private Cipher dataEncryptCipher;
     private Cipher dataDecryptCipher;
@@ -65,23 +67,21 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     public SecureChannelApplet(byte[] buffer, short offset, byte length)
-    {
-        baTemp = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
-        sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);
+    {   
+        mRamArray = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
+  
+        hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        hash.doFinal(buffer, (short) 0, (short) 4, mRamArray, (short) 0);
+        
+        pinKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        pinKey.setKey(mRamArray, (short) 0);
         
         dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
         dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
         
-        // Init hashing
-        hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
-        
-        // TODO: setup pin
-        hashed_pin = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);;
-        HashPIN(new byte[]{'1', '2', '3', '4'}, hashed_pin);
-        
-        
-        
+        sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);
+
         register();
     }
 
@@ -170,11 +170,12 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
 
         // ENCRYPT INCOMING BUFFER
-        dataEncryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, tmpBuffer, (short) 0);
+
+        dataEncryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArray, (short) 0);
         // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+        Util.arrayCopyNonAtomic(mRamArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
@@ -189,14 +190,15 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
 
         // ENCRYPT INCOMING BUFFER
-        dataDecryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, tmpBuffer, (short) 0);
+        dataDecryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArray, (short) 0);
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(tmpBuffer, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
+
+        Util.arrayCopyNonAtomic(mRamArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
     }
     
     void HashPIN(byte[] pin, byte[] hashedPin) {
-        hash.doFinal(pin, (short) 0, (short) pin.length, hashedPin, (short) 0);
+        hash.doFinal(pin, (short) 0, PIN_LENGTH, hashedPin, (short) 0);
     }
     
     // HASH INCOMING BUFFER
@@ -206,13 +208,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         // TODO: Implement hashing
         /*if (m_hash != null) {
-            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArrayArray, (short) 0);
         } else {
             ISOException.throwIt(SW_OBJECT_NOT_AVAILABLE);
         }
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
+        Util.arrayCopyNonAtomic(mRamArrayArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
@@ -228,21 +230,19 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
-        byte[] shortened_key = new byte[16];
-        Util.arrayCopyNonAtomic(hashed_pin, (short) 0, shortened_key, (short) 0, (short) 16);
 
         byte[] cryptBuffer = new byte[receivedLength];
 
         KeyAgreement keyAgreement= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
         keyAgreement.init(privKeyU);
 
-        if (cryptPublicKey(shortened_key, apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
+        if (cryptPublicKey(apdu.getBuffer(), receivedLength, ISO7816.OFFSET_CDATA, cryptBuffer, (short) 0, Cipher.MODE_DECRYPT) != receivedLength) {
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
 
         short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, sharedSecret, (short) 0);
-        short len = pubKeyU.getW(baTemp,(short) 0);
-        short length = cryptPublicKey(shortened_key, baTemp, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
+        short len = pubKeyU.getW(mRamArray,(short) 0);
+        short length = cryptPublicKey(mRamArray, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
 
         apdu.setOutgoing();
         apdu.setOutgoingLength((short) cryptBuffer.length);
@@ -251,12 +251,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         initSessionKey();
     }
 
-    private short cryptPublicKey(byte[] key, byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
-        AESKey aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+    private short cryptPublicKey(byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
 
-        aesKey.setKey(key, (short) 0);
-        aesCipher.init(aesKey, mode);
+        aesCipher.init(pinKey, mode);
 
         return aesCipher.doFinal(dataToCrypt, (short) decryptOffset, cryptLength, out, offset);
     }
