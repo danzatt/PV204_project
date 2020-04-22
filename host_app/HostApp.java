@@ -73,7 +73,7 @@ public class HostApp {
         System.arraycopy(publicKeyY, 0, publicKeyWRaw, 1 + publicKeyX.length, publicKeyY.length);
 
         AID appletAID = AIDUtil.create(APPLET_AID);
-        simulator.installApplet(appletAID, SecureChannelApplet.class);
+        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 0, (byte) pin.length);
 
         simulator.selectApplet(appletAID);
 
