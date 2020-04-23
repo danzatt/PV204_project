@@ -45,6 +45,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     final static short SW_CIPHER_DATA_LENGTH_BAD = (short) 0x6710;
     final static short SW_OBJECT_NOT_AVAILABLE = (short) 0x6711;
     final static short SW_BAD_PIN = (short) 0x6900;
+    final static short SW_CARD_LOCKED = (short) 0x6901;
 
     final static short SW_Exception = (short) 0xff01;
     final static short SW_ArrayIndexOutOfBoundsException = (short) 0xff02;
@@ -123,6 +124,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         short p1 = (short)apduBuffer[ISO7816.OFFSET_P1];
         short p2 = (short)apduBuffer[ISO7816.OFFSET_P2];
 
+        checkPinTrials();
         // ignore the applet select command dispached to the process
         if (selectingApplet()) {
             return;
@@ -315,5 +317,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         
         //dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
         //dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
+    }
+
+    private void checkPinTrials() {
+        if (pinCheck.getTriesRemaining() <= 0) {
+            ISOException.throwIt(SW_CARD_LOCKED);
+        }
     }
 }

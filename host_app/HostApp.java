@@ -138,6 +138,8 @@ public class HostApp {
             
             if (response.getSW() == 0x6900) {
                 throw new Exception("Wrong pin");
+            } else if (response.getSW() == 0x6901) {
+                throw new Exception("Card is locked.");
             }
             
             if (response.getData().length != Config.paddedKeySize) {
