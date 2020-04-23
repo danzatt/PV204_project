@@ -1,11 +1,11 @@
 package host;
 
 import host_app.Config;
+import host_app.Cryptogram;
 import src.main.java.applet.SecureChannelApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import javacard.framework.AID;
-
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -24,40 +24,46 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
-import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
+import javax.crypto.spec.IvParameterSpec;
 
 public class HostApp {
+    private static CardSimulator simulator; 
+    
     private static final String APPLET_AID = "12345678912345678900";
+
     private static final byte INS_DH_INIT = (byte) 0x50;
-    final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    private final static byte INS_CRYPTOGRAM = (byte) 0x51;
+    private final static byte INS_DUMMY = (byte) 0x52;
+    private final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    
+    private static final int IV_SIZE = 16;
+    private static final short PIN_LENGTH = 4;
+    
     final static byte[] pin = {'1', '2', '3', '4'};
 
     private static SecretKeySpec sessionKeySpec;
     private static Cipher sessionEncrypt;
     private static Cipher sessionDecrypt;
     private static byte[] sharedSecret;
-    
-    private static byte[] trimLeadingZero(byte[] bytes) {
-        if (bytes[0] == 0) {  // trim the leading zero
-            byte[] tmp = new byte[bytes.length - 1];
-            System.arraycopy(bytes, 1, tmp, 0, tmp.length);
-            return tmp;
-        }
-        return bytes;
-    }
+    private static IvParameterSpec ivParameterSpec;
 
-    private static byte[] publicKeyToRaw(ECPublicKey pubKey) {
+    private byte[] publicKeyToRaw(ECPublicKey pubKey) {
         ECPoint publicKeyPoint = pubKey.getW();
-        byte[] publicKeyX = trimLeadingZero(publicKeyPoint.getAffineX().toByteArray());
-        byte[] publicKeyY = trimLeadingZero(publicKeyPoint.getAffineY().toByteArray());
+        byte[] publicKeyXWhole = publicKeyPoint.getAffineX().toByteArray();
+        byte[] publicKeyYWhole = publicKeyPoint.getAffineY().toByteArray();
+
+        byte[] publicKeyX = new byte[Config.singleCoordLength];
+        byte[] publicKeyY = new byte[Config.singleCoordLength];
+
+        System.arraycopy(publicKeyXWhole, publicKeyXWhole.length - Config.singleCoordLength, publicKeyX, 0, Config.singleCoordLength);
+        System.arraycopy(publicKeyYWhole, publicKeyYWhole.length - Config.singleCoordLength, publicKeyY, 0, Config.singleCoordLength);
 
         if (publicKeyX.length != Config.singleCoordLength || publicKeyY.length != Config.singleCoordLength) {
             throw new IllegalArgumentException("Different key length than configured.");
@@ -71,7 +77,10 @@ public class HostApp {
         return publicKeyWRaw;
     }
 
-    private static ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
+    private ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
+        if (publicKeyWRaw[0] != 0x04) {
+            throw new IllegalArgumentException("Only uncompressed form supported");
+        }
         byte[] cardPublicKeyX = new byte[Config.singleCoordLength];
         byte[] cardPublicKeyY = new byte[Config.singleCoordLength];
 
@@ -89,7 +98,7 @@ public class HostApp {
         }
     }
 
-    private static byte[] hashPin(byte[] pin) {
+    private byte[] hashPin(byte[] pin) {
         try {
             MessageDigest sha = MessageDigest.getInstance("SHA-1");
             byte[] hPin = sha.digest(pin);
@@ -100,7 +109,7 @@ public class HostApp {
         }
     }
 
-    private static byte[] negotiateSecret(CardSimulator simulator) {
+    private byte[] negotiateSecret(CardSimulator simulator, byte[] userPin) throws Exception {
         try {
             System.out.println("Generating ECDH keypair...");
             KeyPairGenerator ECKeyPairGen = KeyPairGenerator.getInstance("EC");
@@ -111,7 +120,7 @@ public class HostApp {
             KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
             keyAgreement.init(ECKeyPair.getPrivate());
 
-            SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hashPin(new byte[]{'1', '2', '3', '4'}), "AES");
+            SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hashPin(userPin), "AES");
 
             byte[] publicKeyWRaw = publicKeyToRaw((ECPublicKey) ECKeyPair.getPublic());
 
@@ -126,7 +135,13 @@ public class HostApp {
             System.out.println(response);
             printBytes(response.getData());
             System.out.println("Data length: " + response.getData().length);
-
+            
+            if (response.getSW() == 0x6900) {
+                throw new Exception("Wrong pin");
+            } else if (response.getSW() == 0x6901) {
+                throw new Exception("Card is locked.");
+            }
+            
             if (response.getData().length != Config.paddedKeySize) {
                 throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
             }
@@ -149,48 +164,97 @@ public class HostApp {
         }
     }
 
-    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
-        byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
-        sessionKeySpec = new SecretKeySpec(short_Key, "AES");
+    private void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
+        //byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
+        sessionKeySpec = new SecretKeySpec(sharedSecret, 0, 16, "AES");
         
-        sessionEncrypt = Cipher.getInstance("AES/ECB/NoPadding");
-        sessionDecrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        //byte[] iv = new byte[IV_SIZE];
+        byte[] iv = Arrays.copyOf(sharedSecret, 16);
+        SecureRandom random = new SecureRandom();
+        //random.nextBytes(iv);
+        ivParameterSpec = new IvParameterSpec(iv);
         
-        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec);
-        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec);
+        sessionEncrypt = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        sessionDecrypt = Cipher.getInstance("AES/CBC/NOPADDING");
+        
+        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec, ivParameterSpec);
+        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec, ivParameterSpec);
         
     }
+
+    private void runECDH(byte[] userPin) throws Exception {
+        if (userPin.length != PIN_LENGTH) {
+            throw new Exception("Wrong entered pin length!");
+        }
+        
+        try{
+            sharedSecret = negotiateSecret(simulator, userPin);
+        } catch (Exception e) {
+            System.out.println(e);
+        }
+        System.out.println("shared secret");
+        printBytes(sharedSecret);
+        initSessionKey();
+    }
     
+    private void Run() {
+        simulator = new CardSimulator();
+        AID appletAID = AIDUtil.create(APPLET_AID);
+
+        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
+        simulator.selectApplet(appletAID);
+    }
+
+    private void sendCryptogram(Cryptogram cryptogram) throws Exception {
+        byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
+        CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
+
+        ResponseAPDU response = simulator.transmitCommand(commandAPDU);
+
+        System.out.println("Cryptogram response" + response);
+        printBytes(response.getData());
+        System.out.println("Data length: " + response.getData().length);
+
+        Cryptogram responseCryptogram = new Cryptogram(Decrypt(response.getData()));
+
+        printBytes(responseCryptogram.payload);
+    }
+
     /**
      * Main entry point.
      *
      * @param args
      */
     public static void main(String[] args) throws Exception {
-        CardSimulator simulator = new CardSimulator();
-        AID appletAID = AIDUtil.create(APPLET_AID);
-
-        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
-        simulator.selectApplet(appletAID);
-
-        sharedSecret = negotiateSecret(simulator);
+        HostApp hostApp = new HostApp();
+        byte[] userPin = new byte[]{'1', '2', '3', '4'};
         
-        printBytes(sharedSecret);
+        hostApp.Run();
         
-        initSessionKey();
+        try {
+            hostApp.runECDH(userPin);
+        } catch (Exception e) {
+            System.err.println(e);
+        }
+        
+        for(int i = 0; i < 10; i++) {
+            Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) 0, new byte[]{3, 1, 4});
+            hostApp.sendCryptogram(cryptogram);
+        }
+        
     }
 
-    private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
+    private byte[] Encrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
         
-        return sessionEncrypt.doFinal(data, 0, inDataLength, out);
+        return sessionEncrypt.doFinal(data);
     }
 
-    private static int Decrypt(byte[] data, int inDataLength, byte[] out) 
+    private byte[] Decrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
-        return sessionDecrypt.doFinal(data, 0, inDataLength, out);
+        return sessionDecrypt.doFinal(data);
     }
     
     public static void printBytes(byte[] data) {
