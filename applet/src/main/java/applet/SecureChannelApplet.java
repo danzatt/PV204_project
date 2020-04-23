@@ -21,9 +21,20 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     // Main instruction class
     
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
-    
+
+    // Cryptogram offsets
+    final static byte CRYPTOGRAM_MAGIC = 0x31;
+    final static byte OFFSET_CRYPTOGRAM_MAGIC = ISO7816.OFFSET_CDATA;
+    final static byte OFFSET_CRYPTOGRAM_LENGTH = ISO7816.OFFSET_CDATA + 1;
+    final static byte OFFSET_CRYPTOGRAM_SEQNUM = ISO7816.OFFSET_CDATA + 2;
+    final static byte OFFSET_CRYPTOGRAM_INS = ISO7816.OFFSET_CDATA + 3;
+    final static byte OFFSET_CRYPTOGRAM_DATA = ISO7816.OFFSET_CDATA + 4;
+
     // Instructions
     final static byte INS_INIT_ECDH = (byte) 0x50;
+    final static byte INS_CRYPTOGRAM = (byte) 0x51;
+
+    final static byte INS_DUMMY = (byte) 0x52;
     // Error codes
     
     final static short SW_BAD_TEST_DATA_LEN = (short) 0x6680;
@@ -107,6 +118,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
                     case INS_INIT_ECDH:
                         initECDH(apdu, receivedLen);
+                        break;
+                    case INS_CRYPTOGRAM:
+                        processCryptogram(apdu, receivedLen);
                         break;
                     default:
                         // The INS code is not supported by the dispatcher
@@ -218,6 +232,26 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
+    }
+
+    private void processCryptogram(APDU apdu, short receivedLength) {
+        Decrypt(apdu, receivedLength);
+        byte[] apduBuffer = apdu.getBuffer();
+        if (apduBuffer[OFFSET_CRYPTOGRAM_MAGIC] != CRYPTOGRAM_MAGIC) {
+            // TODO: failed PIN attempt
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+
+        // TODO: check SEQNUM
+
+        switch (apduBuffer[OFFSET_CRYPTOGRAM_INS]) {
+            case INS_DUMMY:
+                handleDummy(apduBuffer, OFFSET_CRYPTOGRAM_DATA, apduBuffer[OFFSET_CRYPTOGRAM_LENGTH]);
+        }
+    }
+
+    private void handleDummy(byte[] data, short dataOffset, short dataLen) {
+        // TODO
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
