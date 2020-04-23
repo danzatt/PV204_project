@@ -33,6 +33,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     // Instructions
     final static byte INS_INIT_ECDH = (byte) 0x50;
     final static byte INS_CRYPTOGRAM = (byte) 0x51;
+    final static byte INS_END_SESSION = (byte) 0xE0;
 
     final static byte INS_DUMMY = (byte) 0x52;
     
@@ -54,6 +55,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     final static short SW_PINException_prefix = (short) 0xf300;
     final static short SW_TransactionException_prefix = (short) 0xf400;
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
+    
+    // Session code
+    final static short SW_SESSION_ENDED = (short) 0x8001;
     
     private static final short BUFFER_SIZE = 32;
     private static final short PIN_LENGTH = 4;
@@ -132,6 +136,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
                     case INS_CRYPTOGRAM:
                         processCryptogram(apdu, receivedLen);
                         break;
+                    case INS_END_SESSION:
+                        endSession();
+                        break;
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -180,6 +187,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         clearSessionData();
     }
 
+    private void endSession() {
+        clearSessionData();
+        ISOException.throwIt(SW_SESSION_ENDED);
+    }
+    
     void clearSessionData() {
         //TODO: add data clening
     }
