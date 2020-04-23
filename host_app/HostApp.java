@@ -24,6 +24,7 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
@@ -33,17 +34,23 @@ import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
+import javax.crypto.spec.IvParameterSpec;
 
 public class HostApp {
+    private static CardSimulator simulator; 
+    
     private static final String APPLET_AID = "12345678912345678900";
     private static final byte INS_DH_INIT = (byte) 0x50;
     final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    private static final int IV_SIZE = 16;
+    
     final static byte[] pin = {'1', '2', '3', '4'};
 
     private static SecretKeySpec sessionKeySpec;
     private static Cipher sessionEncrypt;
     private static Cipher sessionDecrypt;
     private static byte[] sharedSecret;
+    private static IvParameterSpec ivParameterSpec;
     
     private static byte[] trimLeadingZero(byte[] bytes) {
         if (bytes[0] == 0) {  // trim the leading zero
@@ -149,15 +156,21 @@ public class HostApp {
         }
     }
 
-    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
-        byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
-        sessionKeySpec = new SecretKeySpec(short_Key, "AES");
+    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
+        //byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
+        sessionKeySpec = new SecretKeySpec(sharedSecret, 0, 16, "AES");
         
-        sessionEncrypt = Cipher.getInstance("AES/ECB/NoPadding");
-        sessionDecrypt = Cipher.getInstance("AES/ECB/NoPadding");
+        //byte[] iv = new byte[IV_SIZE];
+        byte[] iv = Arrays.copyOf(sharedSecret, 16);
+        SecureRandom random = new SecureRandom();
+        //random.nextBytes(iv);
+        ivParameterSpec = new IvParameterSpec(iv);
         
-        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec);
-        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec);
+        sessionEncrypt = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        sessionDecrypt = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        
+        sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec, ivParameterSpec);
+        sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec, ivParameterSpec);
         
     }
     
@@ -167,7 +180,7 @@ public class HostApp {
      * @param args
      */
     public static void main(String[] args) throws Exception {
-        CardSimulator simulator = new CardSimulator();
+        simulator = new CardSimulator();
         AID appletAID = AIDUtil.create(APPLET_AID);
 
         simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
@@ -180,17 +193,25 @@ public class HostApp {
         initSessionKey();
     }
 
-    private static int Encrypt(byte[] data, int inDataLength, byte[] out) 
+    private static byte[] Encrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
         
-        return sessionEncrypt.doFinal(data, 0, inDataLength, out);
+        return sessionEncrypt.doFinal(data);
     }
 
-    private static int Decrypt(byte[] data, int inDataLength, byte[] out) 
+    private static byte[] Decrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
-        return sessionDecrypt.doFinal(data, 0, inDataLength, out);
+        return sessionDecrypt.doFinal(data);
+    }
+    
+    private static ResponseAPDU sendAPDU(byte ins, byte p1, byte p2, byte[] data) throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
+        
+        byte[] encryptedData = Encrypt(data);
+        
+        CommandAPDU newCommand = new CommandAPDU(CLA_SECURECHANNEL, ins, p1, p2, encryptedData);
+        return simulator.transmitCommand(newCommand);
     }
     
     public static void printBytes(byte[] data) {
