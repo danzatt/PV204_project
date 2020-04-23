@@ -88,8 +88,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         pinKey.setKey(mRamArray, (short) 0);
         
         dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
-        dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+        dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         
         sharedSecret = JCSystem.makeTransientByteArray(SecureChannelConfig.secretLen, JCSystem.CLEAR_ON_RESET);
 
@@ -300,8 +300,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         
         dataKey.setKey(shortened_key, (short) 0);
         
-        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT);
-        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT);
+        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
+        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
     }
     
     
