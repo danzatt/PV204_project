@@ -78,6 +78,9 @@ public class HostApp {
     }
 
     private ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
+        if (publicKeyWRaw[0] != 0x04) {
+            throw new IllegalArgumentException("Only uncompressed form supported");
+        }
         byte[] cardPublicKeyX = new byte[Config.singleCoordLength];
         byte[] cardPublicKeyY = new byte[Config.singleCoordLength];
 
@@ -187,6 +190,7 @@ public class HostApp {
         } catch (Exception e) {
             System.out.println(e);
         }
+        System.out.println("shared secret");
         printBytes(sharedSecret);
         initSessionKey();
     }

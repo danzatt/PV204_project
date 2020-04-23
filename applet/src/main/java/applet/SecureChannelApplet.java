@@ -199,43 +199,6 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         dataKey.clearKey();
     }
 
-    void Encrypt(APDU apdu, short dataLen) {
-        byte[] apdubuf = apdu.getBuffer();
-        
-
-        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
-        if ((dataLen % 16) != 0) {
-            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-        }
-
-        // ENCRYPT INCOMING BUFFER
-
-        dataEncryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArray, (short) 0);
-        // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(mRamArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
-    }
-    
-    void Decrypt(APDU apdu, short dataLen) {
-        byte[] apdubuf = apdu.getBuffer();
-
-        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
-        if ((dataLen % 16) != 0) {
-            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-        }
-
-        // ENCRYPT INCOMING BUFFER
-        dataDecryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArray, (short) 0);
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-
-        Util.arrayCopyNonAtomic(mRamArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-    }
-    
     void HashPIN(byte[] pin, byte[] hashedPin) {
         hash.doFinal(pin, (short) 0, PIN_LENGTH, hashedPin, (short) 0);
     }
@@ -260,8 +223,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     private void processCryptogram(APDU apdu, short receivedLength) {
-        Decrypt(apdu, receivedLength);
         byte[] apduBuffer = apdu.getBuffer();
+        if ((receivedLength % 16) != 0) {
+            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+        }
+
+        dataDecryptCipher.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, receivedLength, apduBuffer, ISO7816.OFFSET_CDATA);
+
         if (apduBuffer[OFFSET_CRYPTOGRAM_MAGIC] != CRYPTOGRAM_MAGIC) {
             // TODO: failed PIN attempt
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
@@ -348,6 +316,4 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         //dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
         //dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
     }
-    
-    
 }
