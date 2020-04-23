@@ -12,11 +12,17 @@ import javacard.security.KeyPair;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 
+/*
+* SecureChannel applet main class
+* @author Michael Klunko 
+* @author Daniel Zatovic
+* @author Vojtech Snajdr
+* Based on the SimpleApplet by Petr Svenda
+*/
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
     
     // Main instruction class
-    
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
 
     // Cryptogram offsets
@@ -62,17 +68,18 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private static final short BUFFER_SIZE = 32;
     private static final short PIN_LENGTH = 4;
     
-    private byte[] dummyPin = new byte[]{'0', '0', '0', '0'};
-    private byte[] wrongPin = new byte[]{'1', '1', '1', '1'};
+    // Variables for pin trials processing
+    private static final byte[] dummyPin = new byte[]{'0', '0', '0', '0'};
+    private static final byte[] wrongPin = new byte[]{'1', '1', '1', '1'};
     private static final byte PIN_TRIES = (byte) 0x03;
     
     private byte[] mRamArray;
     private RandomData random;
     private MessageDigest hash;
 
-    KeyPair kpU;
-    ECPrivateKey privKeyU;
-    ECPublicKey pubKeyU;
+    private KeyPair kpU;
+    private ECPrivateKey privKeyU;
+    private ECPublicKey pubKeyU;
     private AESKey pinKey;
     private AESKey dataKey;
     private Cipher dataEncryptCipher;
@@ -81,6 +88,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private byte[] hashed_pin;
     private byte currentSeqNum = 0;
     
+    // PIN structure used only for pin trials
     private OwnerPIN pinCheck;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
@@ -98,10 +106,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         pinKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         pinKey.setKey(mRamArray, (short) 0);
         
-        //Set dummy pin to count tries
+        // Set dummy pin to count tries
         pinCheck = new OwnerPIN(PIN_TRIES, (byte) 4);
         pinCheck.update(dummyPin, (short) 0, (byte) dummyPin.length);
         
+        // Init session keys
         dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         dataDecryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
@@ -113,7 +122,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     @Override
     public void process(APDU apdu) throws ISOException {
-        // get the buffer with incoming APDU
+        // Get the buffer with incoming APDU
         byte[] apduBuffer = apdu.getBuffer();
         short receivedLen = apdu.setIncomingAndReceive();
         byte cla = apduBuffer[ISO7816.OFFSET_CLA];
@@ -123,7 +132,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         short p2 = (short)apduBuffer[ISO7816.OFFSET_P2];
 
         checkPinTrials();
-        // ignore the applet select command dispached to the process
+        // Ignore the applet select command dispached to the process
         if (selectingApplet()) {
             return;
         }
@@ -189,6 +198,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         clearSessionData();
     }
 
+    /*
+    * @brief End session and send session end code to PC
+    */
     private void endSession() {
         clearSessionData();
         ISOException.throwIt(SW_SESSION_ENDED);
@@ -200,29 +212,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         dataKey.clearKey();
     }
 
+    /*
+    * @brief Hash pin for PAKE
+    */
     void HashPIN(byte[] pin, byte[] hashedPin) {
         hash.doFinal(pin, (short) 0, PIN_LENGTH, hashedPin, (short) 0);
     }
     
-    // HASH INCOMING BUFFER
-    void Hash(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // TODO: Implement hashing
-        /*if (m_hash != null) {
-            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, mRamArrayArray, (short) 0);
-        } else {
-            ISOException.throwIt(SW_OBJECT_NOT_AVAILABLE);
-        }
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(mRamArrayArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
-    }
-
     private void increaseSeqNum() {
         if (currentSeqNum == 255)
             currentSeqNum = 0;
@@ -230,6 +226,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             currentSeqNum++;
     }
 
+    /*
+    * @brief Process encrypted APDU.
+    * @param apdu APDU with encrypted data
+    * @param receivedLength data buffer length
+    */
     private void processCryptogram(APDU apdu, short receivedLength) {
         byte[] apduBuffer = apdu.getBuffer();
         if ((receivedLength % 16) != 0) {
@@ -256,6 +257,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         }
     }
 
+    /*
+    * @brief Testing function. Answer for 'dummy' instruction
+    * @param apdu
+    */
     private void handleDummy(APDU apdu) {
         byte[] apduBuffer = apdu.getBuffer();
         short three = apduBuffer[OFFSET_CRYPTOGRAM_DATA];
@@ -279,6 +284,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     }
 
+    /*
+    * @brief Initialize ECDH + PAKE. Initialize session keys.
+    */
     private void initECDH(APDU apdu, short receivedLength) {
         if (receivedLength != (SecureChannelConfig.publicKeyBytes + 31))
         {
@@ -318,9 +326,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         apdu.setOutgoingLength((short) cryptBuffer.length);
         apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
         
-        //initSessionKey();
     }
 
+    /*
+    * @brief Encrypt DH public key with hashed PIN
+    */
     private short cryptPublicKey(byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
 
@@ -328,18 +338,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         return aesCipher.doFinal(dataToCrypt, (short) decryptOffset, cryptLength, out, offset);
     }
-    
-    private void initSessionKey() {
-        
-        //byte[] shortened_key = new byte[16];
-        //Util.arrayCopyNonAtomic(sharedSecret, (short) 0, shortened_key, (short) 0, (short) 16);
-        
-        //dataKey.setKey(shortened_key, (short) 0);
-        
-        //dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
-        //dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
-    }
 
+    /*
+    * @brief Check if any PIN trials remaining
+    */
     private void checkPinTrials() {
         if (pinCheck.getTriesRemaining() <= 0) {
             ISOException.throwIt(SW_CARD_LOCKED);
