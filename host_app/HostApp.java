@@ -1,6 +1,5 @@
 package host;
 
-import cardTools.Util;
 import host_app.Config;
 import host_app.Cryptogram;
 import src.main.java.applet.SecureChannelApplet;
@@ -168,7 +167,7 @@ public class HostApp {
         ivParameterSpec = new IvParameterSpec(iv);
         
         sessionEncrypt = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        sessionDecrypt = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        sessionDecrypt = Cipher.getInstance("AES/CBC/NOPADDING");
         
         sessionEncrypt.init(Cipher.ENCRYPT_MODE, sessionKeySpec, ivParameterSpec);
         sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec, ivParameterSpec);
@@ -198,6 +197,10 @@ public class HostApp {
         System.out.println("Cryptogram response" + response);
         printBytes(response.getData());
         System.out.println("Data length: " + response.getData().length);
+
+        Cryptogram responseCryptogram = new Cryptogram(Decrypt(response.getData()));
+
+        printBytes(cryptogram.payload);
     }
 
     /**
@@ -225,21 +228,6 @@ public class HostApp {
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
         return sessionDecrypt.doFinal(data);
-    }
-    
-    private ResponseAPDU sendAPDU(byte ins, byte p1, byte p2, byte[] data) throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
-        
-        if (data.length > 256) {
-            return null;
-        }
-        byte[] len = new byte[1];
-        len[0] = (byte) data.length;
-        
-        byte[] out = Util.concat(len, data);
-        byte[] encryptedData = Encrypt(out);
-        
-        CommandAPDU newCommand = new CommandAPDU(CLA_SECURECHANNEL, ins, p1, p2, encryptedData);
-        return simulator.transmitCommand(newCommand);
     }
     
     public static void printBytes(byte[] data) {

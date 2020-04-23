@@ -24,6 +24,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
     // Cryptogram offsets
     final static byte CRYPTOGRAM_MAGIC = 0x31;
+    final static byte CRYPTOGRAM_HEADER_LENGTH = 4;
+
     final static byte OFFSET_CRYPTOGRAM_MAGIC = ISO7816.OFFSET_CDATA;
     final static byte OFFSET_CRYPTOGRAM_LENGTH = ISO7816.OFFSET_CDATA + 1;
     final static byte OFFSET_CRYPTOGRAM_SEQNUM = ISO7816.OFFSET_CDATA + 2;
@@ -268,14 +270,21 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
 
         switch (apduBuffer[OFFSET_CRYPTOGRAM_INS]) {
             case INS_DUMMY:
-                handleDummy(apduBuffer, OFFSET_CRYPTOGRAM_DATA, apduBuffer[OFFSET_CRYPTOGRAM_LENGTH]);
+                handleDummy(apdu, apduBuffer, OFFSET_CRYPTOGRAM_DATA, apduBuffer[OFFSET_CRYPTOGRAM_LENGTH]);
         }
     }
 
-    private void handleDummy(byte[] data, short dataOffset, short dataLen) {
+    private void handleDummy(APDU apdu, byte[] data, short dataOffset, short dataLen) {
         short three = data[dataOffset];
-//        short one = data[dataOffset + (short) 1];
-//        short four = data[dataOffset + (short) 2];
+        data[dataOffset] = 5;
+
+        short sendOffset = (short) (dataOffset - (short) CRYPTOGRAM_HEADER_LENGTH);
+
+        dataEncryptCipher.doFinal(data, sendOffset, (short) 16, data, sendOffset);
+
+        apdu.setOutgoing();
+        apdu.setOutgoingLength((short) 16);
+        apdu.sendBytesLong(data,(short) sendOffset, (short) 16);
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
