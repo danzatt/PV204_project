@@ -1,6 +1,6 @@
 package host;
 
-import host_app.Config;
+import cardTools.Util;
 import src.main.java.applet.SecureChannelApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
@@ -208,7 +208,14 @@ public class HostApp {
     
     private static ResponseAPDU sendAPDU(byte ins, byte p1, byte p2, byte[] data) throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
         
-        byte[] encryptedData = Encrypt(data);
+        if (data.length > 256) {
+            return null;
+        }
+        byte[] len = new byte[1];
+        len[0] = (byte) data.length;
+        
+        byte[] out = Util.concat(len, data);
+        byte[] encryptedData = Encrypt(out);
         
         CommandAPDU newCommand = new CommandAPDU(CLA_SECURECHANNEL, ins, p1, p2, encryptedData);
         return simulator.transmitCommand(newCommand);
