@@ -30,6 +30,9 @@ import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
 import javax.crypto.spec.IvParameterSpec;
 
@@ -104,7 +107,7 @@ public class HostApp {
         return bytes;
     }
 
-    private static byte[] publicKeyToRaw(ECPublicKey pubKey) {
+    private byte[] publicKeyToRaw(ECPublicKey pubKey) {
         ECPoint publicKeyPoint = pubKey.getW();
         byte[] publicKeyX = trimLeadingZero(publicKeyPoint.getAffineX().toByteArray());
         byte[] publicKeyY = trimLeadingZero(publicKeyPoint.getAffineY().toByteArray());
@@ -121,7 +124,7 @@ public class HostApp {
         return publicKeyWRaw;
     }
 
-    private static ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
+    private ECPublicKey publicKeyFromRaw(byte[] publicKeyWRaw) {
         byte[] cardPublicKeyX = new byte[Config.singleCoordLength];
         byte[] cardPublicKeyY = new byte[Config.singleCoordLength];
 
@@ -139,7 +142,7 @@ public class HostApp {
         }
     }
 
-    private static byte[] hashPin(byte[] pin) {
+    private byte[] hashPin(byte[] pin) {
         try {
             MessageDigest sha = MessageDigest.getInstance("SHA-1");
             byte[] hPin = sha.digest(pin);
@@ -150,7 +153,7 @@ public class HostApp {
         }
     }
 
-    private static byte[] negotiateSecret(CardSimulator simulator) {
+    private byte[] negotiateSecret(CardSimulator simulator) {
         try {
             System.out.println("Generating ECDH keypair...");
             KeyPairGenerator ECKeyPairGen = KeyPairGenerator.getInstance("EC");
@@ -199,7 +202,7 @@ public class HostApp {
         }
     }
 
-    private static void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
+    private void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
         //byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
         sessionKeySpec = new SecretKeySpec(sharedSecret, 0, 16, "AES");
         
@@ -217,39 +220,47 @@ public class HostApp {
         
     }
     
+    private void runECDH() throws Exception{
+        sharedSecret = negotiateSecret(simulator);
+        printBytes(sharedSecret);
+        initSessionKey();
+    }
+    
+    private void Run() {
+        simulator = new CardSimulator();
+        AID appletAID = AIDUtil.create(APPLET_AID);
+
+        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
+        simulator.selectApplet(appletAID);
+    }
+    
     /**
      * Main entry point.
      *
      * @param args
      */
     public static void main(String[] args) throws Exception {
-        simulator = new CardSimulator();
-        AID appletAID = AIDUtil.create(APPLET_AID);
-
-        simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
-        simulator.selectApplet(appletAID);
-
-        sharedSecret = negotiateSecret(simulator);
+        HostApp hostApp = new HostApp();
         
-        printBytes(sharedSecret);
+        hostApp.Run();
+        hostApp.runECDH();
         
-        initSessionKey();
     }
-
-    private static byte[] Encrypt(byte[] data) 
+    
+    private byte[] Encrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
         
         return sessionEncrypt.doFinal(data);
     }
 
-    private static byte[] Decrypt(byte[] data) 
+    private byte[] Decrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
         return sessionDecrypt.doFinal(data);
     }
     
-    private static ResponseAPDU sendAPDU(byte ins, byte p1, byte p2, byte[] data) throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
+    private ResponseAPDU sendAPDU(byte ins, byte p1, byte p2, byte[] data) throws ShortBufferException, IllegalBlockSizeException, BadPaddingException {
         
         if (data.length > 256) {
             return null;
