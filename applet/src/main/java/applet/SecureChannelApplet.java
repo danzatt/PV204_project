@@ -33,10 +33,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     // Instructions
     final static byte INS_INIT_ECDH = (byte) 0x50;
     final static byte INS_CRYPTOGRAM = (byte) 0x51;
+    final static byte INS_END_SESSION = (byte) 0xE0;
 
     final static byte INS_DUMMY = (byte) 0x52;
-    // Error codes
     
+    // Error codes
     final static short SW_BAD_TEST_DATA_LEN = (short) 0x6680;
     final static short SW_KEY_LENGTH_BAD = (short) 0x6715;
     final static short SW_CIPHER_DATA_LENGTH_BAD = (short) 0x6710;
@@ -55,8 +56,15 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     final static short SW_TransactionException_prefix = (short) 0xf400;
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
     
+    // Session code
+    final static short SW_SESSION_ENDED = (short) 0x8001;
+    
     private static final short BUFFER_SIZE = 32;
     private static final short PIN_LENGTH = 4;
+    
+    private byte[] dummyPin = new byte[]{'0', '0', '0', '0'};
+    private byte[] wrongPin = new byte[]{'1', '1', '1', '1'};
+    private static final byte PIN_TRIES = (byte) 0x03;
     
     private byte[] mRamArray;
     private RandomData random;
@@ -71,6 +79,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private Cipher dataDecryptCipher;
     private byte[] sharedSecret;
     private byte[] hashed_pin;
+    
+    private OwnerPIN pinCheck;
         
     public static void install(byte[] bArray, short bOffset, byte bLength) 
     {
@@ -86,6 +96,10 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         
         pinKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         pinKey.setKey(mRamArray, (short) 0);
+        
+        //Set dummy pin to count tries
+        pinCheck = new OwnerPIN(PIN_TRIES, (byte) 4);
+        pinCheck.update(dummyPin, (short) 0, (byte) dummyPin.length);
         
         dataKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         dataEncryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
@@ -121,6 +135,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
                         break;
                     case INS_CRYPTOGRAM:
                         processCryptogram(apdu, receivedLen);
+                        break;
+                    case INS_END_SESSION:
+                        endSession();
                         break;
                     default:
                         // The INS code is not supported by the dispatcher
@@ -170,6 +187,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         clearSessionData();
     }
 
+    private void endSession() {
+        clearSessionData();
+        ISOException.throwIt(SW_SESSION_ENDED);
+    }
+    
     void clearSessionData() {
         Util.arrayFillNonAtomic(mRamArray, (short) 0, (short) mRamArray.length, (byte) 0);
         dataKey.clearKey();
@@ -252,7 +274,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     private void handleDummy(byte[] data, short dataOffset, short dataLen) {
-        // TODO
+        short three = data[dataOffset];
+//        short one = data[dataOffset + (short) 1];
+//        short four = data[dataOffset + (short) 2];
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
