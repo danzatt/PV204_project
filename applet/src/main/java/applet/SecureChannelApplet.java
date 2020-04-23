@@ -274,7 +274,11 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
 
-        short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, sharedSecret, (short) 0);
+        short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, mRamArray, (short) 0);
+        dataKey.setKey(mRamArray, (short) 0);
+        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, mRamArray, (short) 0, (short) 16);
+        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, mRamArray, (short) 0, (short) 16);
+
         short len = pubKeyU.getW(mRamArray,(short) 0);
         short length = cryptPublicKey(mRamArray, (short)cryptBuffer.length, (short) 0, cryptBuffer, (short) 0, Cipher.MODE_ENCRYPT);
 
@@ -282,7 +286,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         apdu.setOutgoingLength((short) cryptBuffer.length);
         apdu.sendBytesLong(cryptBuffer,(short) 0, (short) cryptBuffer.length);
         
-        initSessionKey();
+        //initSessionKey();
     }
 
     private short cryptPublicKey(byte[] dataToCrypt, short cryptLength, short decryptOffset, byte[] out, short offset, byte mode) {
@@ -295,13 +299,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     
     private void initSessionKey() {
         
-        byte[] shortened_key = new byte[16];
-        Util.arrayCopyNonAtomic(sharedSecret, (short) 0, shortened_key, (short) 0, (short) 16);
+        //byte[] shortened_key = new byte[16];
+        //Util.arrayCopyNonAtomic(sharedSecret, (short) 0, shortened_key, (short) 0, (short) 16);
         
-        dataKey.setKey(shortened_key, (short) 0);
+        //dataKey.setKey(shortened_key, (short) 0);
         
-        dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
-        dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
+        //dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, shortened_key, (short) 0, (short) 16);
+        //dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, shortened_key, (short) 0, (short) 16);
     }
     
     
