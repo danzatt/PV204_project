@@ -39,11 +39,13 @@ public class HostApp {
     private static final String APPLET_AID = "12345678912345678900";
 
     private static final byte INS_DH_INIT = (byte) 0x50;
-    final static byte INS_CRYPTOGRAM = (byte) 0x51;
-    final static byte INS_DUMMY = (byte) 0x52;
-    final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    private final static byte INS_CRYPTOGRAM = (byte) 0x51;
+    private final static byte INS_DUMMY = (byte) 0x52;
+    private final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    
     private static final int IV_SIZE = 16;
-
+    private static final short PIN_LENGTH = 4;
+    
     final static byte[] pin = {'1', '2', '3', '4'};
 
     private static SecretKeySpec sessionKeySpec;
@@ -104,7 +106,7 @@ public class HostApp {
         }
     }
 
-    private byte[] negotiateSecret(CardSimulator simulator) {
+    private byte[] negotiateSecret(CardSimulator simulator, byte[] userPin) throws Exception {
         try {
             System.out.println("Generating ECDH keypair...");
             KeyPairGenerator ECKeyPairGen = KeyPairGenerator.getInstance("EC");
@@ -115,7 +117,7 @@ public class HostApp {
             KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
             keyAgreement.init(ECKeyPair.getPrivate());
 
-            SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hashPin(new byte[]{'1', '2', '3', '4'}), "AES");
+            SecretKeySpec hPinAesKeySpec = new SecretKeySpec(hashPin(userPin), "AES");
 
             byte[] publicKeyWRaw = publicKeyToRaw((ECPublicKey) ECKeyPair.getPublic());
 
@@ -130,7 +132,11 @@ public class HostApp {
             System.out.println(response);
             printBytes(response.getData());
             System.out.println("Data length: " + response.getData().length);
-
+            
+            if (response.getSW() == 0x6900) {
+                throw new Exception("Wrong pin");
+            }
+            
             if (response.getData().length != Config.paddedKeySize) {
                 throw new IllegalArgumentException("Wrong public key from card." + response.getData().length);
             }
@@ -171,8 +177,16 @@ public class HostApp {
         
     }
 
-    private void runECDH() throws Exception {
-        sharedSecret = negotiateSecret(simulator);
+    private void runECDH(byte[] userPin) throws Exception {
+        if (userPin.length != PIN_LENGTH) {
+            throw new Exception("Wrong entered pin length!");
+        }
+        
+        try{
+            sharedSecret = negotiateSecret(simulator, userPin);
+        } catch (Exception e) {
+            System.out.println(e);
+        }
         printBytes(sharedSecret);
         initSessionKey();
     }
@@ -207,11 +221,21 @@ public class HostApp {
      */
     public static void main(String[] args) throws Exception {
         HostApp hostApp = new HostApp();
+        byte[] userPin = new byte[]{'1', '2', '3', '4'};
         
         hostApp.Run();
-        hostApp.runECDH();
-        Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) 0, new byte[]{3, 1, 4});
-        hostApp.sendCryptogram(cryptogram);
+        
+        try {
+            hostApp.runECDH(userPin);
+        } catch (Exception e) {
+            System.err.println(e);
+        }
+        
+        for(int i = 0; i < 10; i++) {
+            Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) 0, new byte[]{3, 1, 4});
+            hostApp.sendCryptogram(cryptogram);
+        }
+        
     }
 
     private byte[] Encrypt(byte[] data) 

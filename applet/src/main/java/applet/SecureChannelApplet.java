@@ -308,7 +308,14 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         }
 
-        short secret_len = keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, mRamArray, (short) 0);
+        try{
+            keyAgreement.generateSecret(cryptBuffer, (short) 0, SecureChannelConfig.publicKeyBytes, mRamArray, (short) 0);
+        } catch (Exception e) {
+            pinCheck.check(wrongPin, (byte) 0, (byte) PIN_LENGTH);
+            ISOException.throwIt(SW_BAD_PIN);
+        }
+        pinCheck.reset();
+        
         dataKey.setKey(mRamArray, (short) 0);
         dataEncryptCipher.init(dataKey, Cipher.MODE_ENCRYPT, mRamArray, (short) 0, (short) 16);
         dataDecryptCipher.init(dataKey, Cipher.MODE_DECRYPT, mRamArray, (short) 0, (short) 16);
