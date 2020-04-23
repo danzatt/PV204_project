@@ -218,13 +218,22 @@ public class HostApp {
         byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
         CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
 
-        ResponseAPDU response = simulator.transmitCommand(commandAPDU);
+        ResponseAPDU responseAPDU = simulator.transmitCommand(commandAPDU);
+        increaseSeqNum();
 
-        System.out.println("Cryptogram response" + response);
-        printBytes(response.getData());
-        System.out.println("Cryptogram payload length: " + response.getData().length);
+        System.out.println("Cryptogram response" + responseAPDU);
+        printBytes(responseAPDU.getData());
+        System.out.println("Cryptogram payload length: " + responseAPDU.getData().length);
 
-        return new Cryptogram(Decrypt(response.getData()));
+        Cryptogram response = new Cryptogram(Decrypt(responseAPDU.getData()));
+
+        if (response.seqnum != currentSeqNum) {
+            throw new IllegalAccessException("Wrong sequence number from card");
+        }
+
+        increaseSeqNum();
+
+        return response;
     }
 
     private void tryDummyINS() throws Exception {
@@ -233,14 +242,9 @@ public class HostApp {
         for(int i = 0; i < 10; i++) {
             System.out.println("Trying dummy INS " + i);
             Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) currentSeqNum , data);
-            increaseSeqNum();
             Cryptogram response = sendCryptogram(cryptogram);
-            if (response.seqnum != currentSeqNum) {
-                throw new IllegalAccessException("Wrong sequence number from card");
-            }
-            increaseSeqNum();
             if (response.payload[0] != expected) {
-                throw new IllegalArgumentException("Got bad response in cryptogram expected " + expected + " got " + response.payload[0]);
+                throw new IllegalArgumentException("Dummy instruction failed. Expected " + expected + " got " + response.payload[0]);
             }
 
             byte tmp = data[0];
