@@ -118,7 +118,19 @@ public class HostApp {
         }
     }
 
-    private byte[] negotiateSecret(CardSimulator simulator, byte[] userPin) throws Exception {
+    private ResponseAPDU transmitAPDU(CommandAPDU commandAPDU) {
+        System.out.print("--> ");
+        printBytes(commandAPDU.getBytes());
+
+        ResponseAPDU response = simulator.transmitCommand(commandAPDU);
+        System.out.print("<-- ");
+        printBytes(response.getBytes());
+        System.out.println(response);
+
+        return response;
+    }
+
+    private byte[] negotiateSecret(byte[] userPin) throws Exception {
         try {
             System.out.println("Generating ECDH keypair...");
             KeyPairGenerator ECKeyPairGen = KeyPairGenerator.getInstance("EC");
@@ -140,11 +152,8 @@ public class HostApp {
             printBytes(publicKeyWRawEncrypted);
 
             CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_DH_INIT, 0x00, 0x00, publicKeyWRawEncrypted);
-            ResponseAPDU response = simulator.transmitCommand(commandAPDU);
-            System.out.println(response);
-            printBytes(response.getData());
-            System.out.println("Data length: " + response.getData().length);
-            
+            ResponseAPDU response = transmitAPDU(commandAPDU);
+
             if (response.getSW() == 0x6900) {
                 throw new Exception("Wrong pin");
             } else if (response.getSW() == 0x6901) {
@@ -197,12 +206,15 @@ public class HostApp {
         }
         
         try{
-            sharedSecret = negotiateSecret(simulator, userPin);
+            sharedSecret = negotiateSecret(userPin);
         } catch (Exception e) {
             System.out.println(e);
         }
-        System.out.println("shared secret");
-        printBytes(sharedSecret);
+
+//        only for debug
+//        System.out.print("Shared secret is: ");
+//        printBytes(sharedSecret);
+
         initSessionKey();
     }
     
@@ -218,12 +230,8 @@ public class HostApp {
         byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
         CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
 
-        ResponseAPDU responseAPDU = simulator.transmitCommand(commandAPDU);
+        ResponseAPDU responseAPDU = transmitAPDU(commandAPDU);
         increaseSeqNum();
-
-        System.out.println("Cryptogram response" + responseAPDU);
-        printBytes(responseAPDU.getData());
-        System.out.println("Cryptogram payload length: " + responseAPDU.getData().length);
 
         Cryptogram response = new Cryptogram(Decrypt(responseAPDU.getData()));
 
@@ -239,8 +247,8 @@ public class HostApp {
     private void tryDummyINS() throws Exception {
         byte expected = 5;
         byte[] data = new byte[]{3, 1, 4};
-        for(int i = 0; i < 10; i++) {
-            System.out.println("Trying dummy INS " + i);
+        for(int i = 0; i < 270; i++) {
+            System.out.println("Trying dummy INS attempt n. " + i);
             Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) currentSeqNum , data);
             Cryptogram response = sendCryptogram(cryptogram);
             if (response.payload[0] != expected) {
