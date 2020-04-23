@@ -171,7 +171,8 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     void clearSessionData() {
-        //TODO: add data clening
+        Util.arrayFillNonAtomic(mRamArray, (short) 0, (short) mRamArray.length, (byte) 0);
+        dataKey.clearKey();
     }
 
     void Encrypt(APDU apdu, short dataLen) {
