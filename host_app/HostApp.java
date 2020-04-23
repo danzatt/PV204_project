@@ -200,7 +200,7 @@ public class HostApp {
 
         Cryptogram responseCryptogram = new Cryptogram(Decrypt(response.getData()));
 
-        printBytes(cryptogram.payload);
+        printBytes(responseCryptogram.payload);
     }
 
     /**
