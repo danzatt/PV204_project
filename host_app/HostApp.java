@@ -51,20 +51,17 @@ public class HostApp {
     private static Cipher sessionDecrypt;
     private static byte[] sharedSecret;
     private static IvParameterSpec ivParameterSpec;
-    
-    private static byte[] trimLeadingZero(byte[] bytes) {
-        if (bytes[0] == 0) {  // trim the leading zero
-            byte[] tmp = new byte[bytes.length - 1];
-            System.arraycopy(bytes, 1, tmp, 0, tmp.length);
-            return tmp;
-        }
-        return bytes;
-    }
 
     private byte[] publicKeyToRaw(ECPublicKey pubKey) {
         ECPoint publicKeyPoint = pubKey.getW();
-        byte[] publicKeyX = trimLeadingZero(publicKeyPoint.getAffineX().toByteArray());
-        byte[] publicKeyY = trimLeadingZero(publicKeyPoint.getAffineY().toByteArray());
+        byte[] publicKeyXWhole = publicKeyPoint.getAffineX().toByteArray();
+        byte[] publicKeyYWhole = publicKeyPoint.getAffineY().toByteArray();
+
+        byte[] publicKeyX = new byte[Config.singleCoordLength];
+        byte[] publicKeyY = new byte[Config.singleCoordLength];
+
+        System.arraycopy(publicKeyXWhole, publicKeyXWhole.length - Config.singleCoordLength, publicKeyX, 0, Config.singleCoordLength);
+        System.arraycopy(publicKeyYWhole, publicKeyYWhole.length - Config.singleCoordLength, publicKeyY, 0, Config.singleCoordLength);
 
         if (publicKeyX.length != Config.singleCoordLength || publicKeyY.length != Config.singleCoordLength) {
             throw new IllegalArgumentException("Different key length than configured.");
