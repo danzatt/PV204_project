@@ -261,7 +261,9 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
 
     private void handleDummy(byte[] data, short dataOffset, short dataLen) {
-        // TODO
+        short three = data[dataOffset];
+//        short one = data[dataOffset + (short) 1];
+//        short four = data[dataOffset + (short) 2];
     }
 
     private void initECDH(APDU apdu, short receivedLength) {

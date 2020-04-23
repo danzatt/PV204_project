@@ -2,6 +2,7 @@ package host;
 
 import cardTools.Util;
 import host_app.Config;
+import host_app.Cryptogram;
 import src.main.java.applet.SecureChannelApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
@@ -37,10 +38,13 @@ public class HostApp {
     private static CardSimulator simulator; 
     
     private static final String APPLET_AID = "12345678912345678900";
+
     private static final byte INS_DH_INIT = (byte) 0x50;
+    final static byte INS_CRYPTOGRAM = (byte) 0x51;
+    final static byte INS_DUMMY = (byte) 0x52;
     final static byte CLA_SECURECHANNEL = (byte) 0xB0;
     private static final int IV_SIZE = 16;
-    
+
     final static byte[] pin = {'1', '2', '3', '4'};
 
     private static SecretKeySpec sessionKeySpec;
@@ -170,8 +174,8 @@ public class HostApp {
         sessionDecrypt.init(Cipher.DECRYPT_MODE, sessionKeySpec, ivParameterSpec);
         
     }
-    
-    private void runECDH() throws Exception{
+
+    private void runECDH() throws Exception {
         sharedSecret = negotiateSecret(simulator);
         printBytes(sharedSecret);
         initSessionKey();
@@ -184,7 +188,18 @@ public class HostApp {
         simulator.installApplet(appletAID, SecureChannelApplet.class, pin, (short) 4, (byte) pin.length);
         simulator.selectApplet(appletAID);
     }
-    
+
+    private void sendCryptogram(Cryptogram cryptogram) throws Exception {
+        byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
+        CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
+
+        ResponseAPDU response = simulator.transmitCommand(commandAPDU);
+
+        System.out.println("Cryptogram response" + response);
+        printBytes(response.getData());
+        System.out.println("Data length: " + response.getData().length);
+    }
+
     /**
      * Main entry point.
      *
@@ -195,9 +210,10 @@ public class HostApp {
         
         hostApp.Run();
         hostApp.runECDH();
-        
+        Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) 0, new byte[]{3, 1, 4});
+        hostApp.sendCryptogram(cryptogram);
     }
-    
+
     private byte[] Encrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
