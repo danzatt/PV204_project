@@ -54,6 +54,15 @@ public class HostApp {
     private static byte[] sharedSecret;
     private static IvParameterSpec ivParameterSpec;
 
+    private byte currentSeqNum = 0;
+
+    private void increaseSeqNum() {
+        if (currentSeqNum == 255)
+            currentSeqNum = 0;
+        else
+            currentSeqNum++;
+    }
+
     private byte[] publicKeyToRaw(ECPublicKey pubKey) {
         ECPoint publicKeyPoint = pubKey.getW();
         byte[] publicKeyXWhole = publicKeyPoint.getAffineX().toByteArray();
@@ -205,7 +214,7 @@ public class HostApp {
         simulator.selectApplet(appletAID);
     }
 
-    private void sendCryptogram(Cryptogram cryptogram) throws Exception {
+    private Cryptogram sendCryptogram(Cryptogram cryptogram) throws Exception {
         byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
         CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
 
@@ -213,11 +222,31 @@ public class HostApp {
 
         System.out.println("Cryptogram response" + response);
         printBytes(response.getData());
-        System.out.println("Data length: " + response.getData().length);
+        System.out.println("Cryptogram payload length: " + response.getData().length);
 
-        Cryptogram responseCryptogram = new Cryptogram(Decrypt(response.getData()));
+        return new Cryptogram(Decrypt(response.getData()));
+    }
 
-        printBytes(responseCryptogram.payload);
+    private void tryDummyINS() throws Exception {
+        byte expected = 5;
+        byte[] data = new byte[]{3, 1, 4};
+        for(int i = 0; i < 10; i++) {
+            System.out.println("Trying dummy INS " + i);
+            Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) currentSeqNum , data);
+            increaseSeqNum();
+            Cryptogram response = sendCryptogram(cryptogram);
+            if (response.seqnum != currentSeqNum) {
+                throw new IllegalAccessException("Wrong sequence number from card");
+            }
+            increaseSeqNum();
+            if (response.payload[0] != expected) {
+                throw new IllegalArgumentException("Got bad response in cryptogram expected " + expected + " got " + response.payload[0]);
+            }
+
+            byte tmp = data[0];
+            data[0] = expected;
+            expected = tmp;
+        }
     }
 
     /**
@@ -236,12 +265,8 @@ public class HostApp {
         } catch (Exception e) {
             System.err.println(e);
         }
-        
-        for(int i = 0; i < 10; i++) {
-            Cryptogram cryptogram = new Cryptogram(INS_DUMMY, (byte) 0, new byte[]{3, 1, 4});
-            hostApp.sendCryptogram(cryptogram);
-        }
-        
+
+        hostApp.tryDummyINS();
     }
 
     private byte[] Encrypt(byte[] data) 

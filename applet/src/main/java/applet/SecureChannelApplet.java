@@ -9,11 +9,8 @@ import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
-import javacard.security.AESKey;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
-
-import java.util.Arrays;
 
 public class SecureChannelApplet extends Applet implements MultiSelectable
 {
@@ -82,6 +79,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     private Cipher dataDecryptCipher;
     private byte[] sharedSecret;
     private byte[] hashed_pin;
+    private byte currentSeqNum = 0;
     
     private OwnerPIN pinCheck;
         
@@ -197,6 +195,7 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
     }
     
     void clearSessionData() {
+        currentSeqNum = 0;
         Util.arrayFillNonAtomic(mRamArray, (short) 0, (short) mRamArray.length, (byte) 0);
         dataKey.clearKey();
     }
@@ -224,6 +223,13 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());*/
     }
 
+    private void increaseSeqNum() {
+        if (currentSeqNum == 255)
+            currentSeqNum = 0;
+        else
+            currentSeqNum++;
+    }
+
     private void processCryptogram(APDU apdu, short receivedLength) {
         byte[] apduBuffer = apdu.getBuffer();
         if ((receivedLength % 16) != 0) {
@@ -233,29 +239,44 @@ public class SecureChannelApplet extends Applet implements MultiSelectable
         dataDecryptCipher.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, receivedLength, apduBuffer, ISO7816.OFFSET_CDATA);
 
         if (apduBuffer[OFFSET_CRYPTOGRAM_MAGIC] != CRYPTOGRAM_MAGIC) {
-            // TODO: failed PIN attempt
+            pinCheck.check(wrongPin, (byte) 0, (byte) PIN_LENGTH);
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
 
-        // TODO: check SEQNUM
+        if (apduBuffer[OFFSET_CRYPTOGRAM_SEQNUM] != currentSeqNum) {
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+
+        increaseSeqNum();
 
         switch (apduBuffer[OFFSET_CRYPTOGRAM_INS]) {
             case INS_DUMMY:
-                handleDummy(apdu, apduBuffer, OFFSET_CRYPTOGRAM_DATA, apduBuffer[OFFSET_CRYPTOGRAM_LENGTH]);
+                handleDummy(apdu);
+                break;
         }
     }
 
-    private void handleDummy(APDU apdu, byte[] data, short dataOffset, short dataLen) {
-        short three = data[dataOffset];
-        data[dataOffset] = 5;
+    private void handleDummy(APDU apdu) {
+        byte[] apduBuffer = apdu.getBuffer();
+        short three = apduBuffer[OFFSET_CRYPTOGRAM_DATA];
+        if (apduBuffer[OFFSET_CRYPTOGRAM_DATA] == 5) {
+            apduBuffer[OFFSET_CRYPTOGRAM_DATA] = 3;
+        } else {
+            apduBuffer[OFFSET_CRYPTOGRAM_DATA] = 5;
+        }
 
-        short sendOffset = (short) (dataOffset - (short) CRYPTOGRAM_HEADER_LENGTH);
+        sendCryptogram(apdu);
+    }
 
-        dataEncryptCipher.doFinal(data, sendOffset, (short) 16, data, sendOffset);
-
+    private void sendCryptogram(APDU apdu) {
+        byte[] apduBuffer = apdu.getBuffer();
+        apduBuffer[OFFSET_CRYPTOGRAM_SEQNUM] = currentSeqNum;
+        dataEncryptCipher.doFinal(apduBuffer, ISO7816.OFFSET_CDATA, (short) 16, apduBuffer, ISO7816.OFFSET_CDATA);
         apdu.setOutgoing();
         apdu.setOutgoingLength((short) 16);
-        apdu.sendBytesLong(data,(short) sendOffset, (short) 16);
+        apdu.sendBytesLong(apduBuffer, ISO7816.OFFSET_CDATA, (short) 16);
+        increaseSeqNum();
+
     }
 
     private void initECDH(APDU apdu, short receivedLength) {
