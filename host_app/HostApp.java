@@ -1,7 +1,5 @@
 package host;
 
-import host_app.Config;
-import host_app.Cryptogram;
 import src.main.java.applet.SecureChannelApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
@@ -32,30 +30,44 @@ import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
 import javax.crypto.ShortBufferException;
 import javax.crypto.spec.IvParameterSpec;
+import javax.security.auth.DestroyFailedException;
 
+/*
+* Host application class
+* @author Michael Klunko, Daniel Zatovic, Vojtech Snajdr
+*/
 public class HostApp {
-    private static CardSimulator simulator; 
+    
+    private CardSimulator simulator; 
     
     private static final String APPLET_AID = "12345678912345678900";
-
+    
+    private static final byte CLA_SECURECHANNEL = (byte) 0xB0;
+    
     private static final byte INS_DH_INIT = (byte) 0x50;
-    private final static byte INS_CRYPTOGRAM = (byte) 0x51;
-    private final static byte INS_DUMMY = (byte) 0x52;
-    private final static byte CLA_SECURECHANNEL = (byte) 0xB0;
+    private static final byte INS_CRYPTOGRAM = (byte) 0x51;
+    private static final byte INS_DUMMY = (byte) 0x52;
+    private static final byte INS_END_SESSION = (byte) 0xE0;
+    
     
     private static final int IV_SIZE = 16;
     private static final short PIN_LENGTH = 4;
     
-    final static byte[] pin = {'1', '2', '3', '4'};
+    private byte[] userPin;
+    // Pin to be installed
+    final static byte[] pin = {'1', '2', '3', '4'}; 
 
-    private static SecretKeySpec sessionKeySpec;
-    private static Cipher sessionEncrypt;
-    private static Cipher sessionDecrypt;
-    private static byte[] sharedSecret;
-    private static IvParameterSpec ivParameterSpec;
+    private SecretKeySpec sessionKeySpec;
+    private Cipher sessionEncrypt;
+    private Cipher sessionDecrypt;
+    private byte[] sharedSecret;
+    private IvParameterSpec ivParameterSpec;
 
     private byte currentSeqNum = 0;
 
+    /*
+    * @brief Increases message sequence number
+    */
     private void increaseSeqNum() {
         if (currentSeqNum == 255)
             currentSeqNum = 0;
@@ -107,6 +119,9 @@ public class HostApp {
         }
     }
 
+    /*
+    * @brief Hash PIN for PAKE
+    */
     private byte[] hashPin(byte[] pin) {
         try {
             MessageDigest sha = MessageDigest.getInstance("SHA-1");
@@ -118,6 +133,9 @@ public class HostApp {
         }
     }
 
+    /*
+    * @brief Transmit apdu with trace
+    */
     private ResponseAPDU transmitAPDU(CommandAPDU commandAPDU) {
         System.out.print("--> ");
         printBytes(commandAPDU.getBytes());
@@ -130,6 +148,9 @@ public class HostApp {
         return response;
     }
 
+    /*
+    * @brief ECDH + PAKE negotiation
+    */
     private byte[] negotiateSecret(byte[] userPin) throws Exception {
         try {
             System.out.println("Generating ECDH keypair...");
@@ -182,8 +203,10 @@ public class HostApp {
         }
     }
 
+    /*
+    * @brief Initialize session keys
+    */
     private void initSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
-        //byte[] short_Key = Arrays.copyOf(sharedSecret, 16);
         sessionKeySpec = new SecretKeySpec(sharedSecret, 0, 16, "AES");
         
         //byte[] iv = new byte[IV_SIZE];
@@ -200,11 +223,7 @@ public class HostApp {
         
     }
 
-    private void runECDH(byte[] userPin) throws Exception {
-        if (userPin.length != PIN_LENGTH) {
-            throw new Exception("Wrong entered pin length!");
-        }
-        
+    private void runECDH() throws Exception {
         try{
             sharedSecret = negotiateSecret(userPin);
         } catch (Exception e) {
@@ -218,6 +237,21 @@ public class HostApp {
         initSessionKey();
     }
     
+    private void EndSession() throws DestroyFailedException {
+        CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_END_SESSION, 0x00, 0x00);
+        ResponseAPDU responseAPDU = transmitAPDU(commandAPDU);
+        if (responseAPDU.getSW() == 0x8001) {
+            System.out.println("--- Session ended ---");
+            currentSeqNum = 0;
+            Arrays.fill(sharedSecret, (byte) 0);
+            sessionEncrypt = null;
+            sessionDecrypt = null;
+        } 
+    }
+    
+    /*
+    * @brief Prepare simulator and install applet
+    */
     private void Run() {
         simulator = new CardSimulator();
         AID appletAID = AIDUtil.create(APPLET_AID);
@@ -226,7 +260,11 @@ public class HostApp {
         simulator.selectApplet(appletAID);
     }
 
+    /*
+    * @brief Send encrypted message to the card
+    */
     private Cryptogram sendCryptogram(Cryptogram cryptogram) throws Exception {
+        checkAndEstablishSession();
         byte[] encryptedCryptogram = Encrypt(cryptogram.getBytes());
         CommandAPDU commandAPDU = new CommandAPDU(CLA_SECURECHANNEL, INS_CRYPTOGRAM, 0x00, 0x00, encryptedCryptogram);
 
@@ -244,6 +282,9 @@ public class HostApp {
         return response;
     }
 
+    /*
+    * @brief Communication testing function
+    */
     private void tryDummyINS() throws Exception {
         byte expected = 5;
         byte[] data = new byte[]{3, 1, 4};
@@ -261,6 +302,17 @@ public class HostApp {
         }
     }
 
+    /*
+    * @brief Enter your pin. Should be done before ECDH.
+    */
+    private void setUserPin(byte[] userPin) {
+        if (userPin.length != PIN_LENGTH) {
+            System.err.println("> Wrong pin length. Pin must have 4 digits");
+            System.exit(0);
+        }
+        this.userPin = userPin;
+    }
+    
     /**
      * Main entry point.
      *
@@ -268,19 +320,25 @@ public class HostApp {
      */
     public static void main(String[] args) throws Exception {
         HostApp hostApp = new HostApp();
-        byte[] userPin = new byte[]{'1', '2', '3', '4'};
+        hostApp.setUserPin(new byte[]{'1', '2', '3', '4'});
         
         hostApp.Run();
         
         try {
-            hostApp.runECDH(userPin);
+            hostApp.runECDH();
         } catch (Exception e) {
             System.err.println(e);
         }
 
         hostApp.tryDummyINS();
+        hostApp.EndSession();
+        hostApp.tryDummyINS();
     }
 
+    /*
+    * @brief Encrypt data with AES session key
+    * @param data data to encrypt
+    */
     private byte[] Encrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
@@ -288,6 +346,11 @@ public class HostApp {
         return sessionEncrypt.doFinal(data);
     }
 
+    /*
+    * @brief Decrypt data with AES session key. Data should be padded by 
+    * 16-byte blocks.
+    * @param data data to decrypt
+    */
     private byte[] Decrypt(byte[] data) 
             throws ShortBufferException, IllegalBlockSizeException, 
             BadPaddingException {
@@ -326,5 +389,21 @@ public class HostApp {
             }
         }
         return buf.toString();
+    }
+
+    /*
+    * @brief Check if session is active. If not, then try to establish a new one.
+    */
+    private void checkAndEstablishSession() {
+        if (sessionDecrypt == null || sessionEncrypt == null) {
+            System.out.println("> Sesssion is not active");
+            System.out.println("> Establishing new session");
+            try {
+                runECDH();
+            } catch (Exception e) {
+                System.err.println("> Session cannot be established. Exiting...");
+                System.exit(0);
+            }
+        }
     }
 }
